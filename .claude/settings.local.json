@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git)",
+      "Bash(npm run build)",
+      "Bash(npx tsc --noEmit src/app/api/invoices/route.ts src/app/api/invoices/[id]/route.ts)",
+      "Bash(npm install lucide-react)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

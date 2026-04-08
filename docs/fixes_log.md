@@ -2,6 +2,74 @@
 
 ---
 
+## [FIXED] خطأ OpenAI في بناء Vercel — 2026-04-08
+
+### المشكلة:
+```
+Error: Missing OPENAI_API_KEY environment variable
+at module evaluation (.next/server/chunks/src_lib_openai_ts_0vod..q._.js:8:64651)
+Error: Failed to collect page data for /api/ai/analyze
+```
+
+عند النشر على Vercel، البناء يفشل لأن `src/lib/openai.ts` كان يرمي خطأ على مستوى الـ module (عند التحميل) إذا لم يجد `OPENAI_API_KEY`. هذا يحصل حتى لو لم يتم استخدام OpenAI.
+
+### الحل:
+تغيير تهيئة OpenAI client من **Eager** إلى **Lazy Initialization**:
+
+#### قبل:
+```typescript
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+if (!OPENAI_API_KEY) {
+  throw new Error('Missing OPENAI_API_KEY environment variable');
+}
+
+const openai = new OpenAI({
+  apiKey: OPENAI_API_KEY,
+});
+```
+
+#### بعد:
+```typescript
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+let openai: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!OPENAI_API_KEY) {
+    throw new Error('Missing OPENAI_API_KEY environment variable');
+  }
+
+  if (!openai) {
+    openai = new OpenAI({
+      apiKey: OPENAI_API_KEY,
+    });
+  }
+
+  return openai;
+}
+
+// في الدوال:
+const client = getOpenAIClient();
+const response = await client.chat.completions.create({...});
+```
+
+### الملفات المعدلة:
+- `src/lib/openai.ts` - تحويل التهيئة إلى lazy initialization
+
+### الفائدة:
+- ✅ البناء ينجح على Vercel حتى بدون `OPENAI_API_KEY`
+- ✅ الخطأ يظهر فقط عند **استخدام** AI analysis (runtime)
+- ✅ يمكن نشر المشروع مع إضافة المتغيرات لاحقاً
+
+### اختبار:
+```bash
+# بدون OPENAI_API_KEY في .env
+npm run build  # ✅ نجح في 20.1 ثانية
+```
+
+---
+
 ## [FIXED] أخطاء TypeScript مع الحقول الاختيارية — 2026-04-08
 
 ### المشكلة:

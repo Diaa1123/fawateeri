@@ -19,12 +19,12 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Overlay */}
       <div
-        className="fixed inset-0 bg-black/70"
+        className="absolute inset-0 bg-black/70"
         onClick={onClose}
       />
 
       {/* Modal Content */}
-      <div className="relative bg-bg-card border border-border-default rounded-xl shadow-xl max-w-md w-full mx-4 z-10">
+      <div className="relative bg-bg-card border border-border-default rounded-xl shadow-xl max-w-md w-full mx-4 z-10 pointer-events-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border-default">
           <h2 className="text-xl font-semibold text-text-primary">{title}</h2>

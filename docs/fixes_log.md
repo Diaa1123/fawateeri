@@ -2,6 +2,46 @@
 
 ---
 
+## [FIXED] أزرار Modal غير قابلة للنقر — 2026-04-08
+
+### المشكلة:
+عند فتح modal التأكيد ("تأكيد الدفع" أو "إلغاء الفاتورة")، الأزرار لا تعمل ولا يمكن النقر عليها.
+
+السبب: الـ overlay كان `fixed` ويغطي المحتوى بالكامل، مما يمنع pointer events من الوصول للأزرار.
+
+### الحل:
+تعديل CSS classes في المكون:
+
+#### في `src/components/ui/Modal.tsx`:
+
+**قبل:**
+```tsx
+<div className="fixed inset-0 z-50 flex items-center justify-center">
+  <div className="fixed inset-0 bg-black/70" onClick={onClose} />
+  <div className="relative bg-bg-card ... z-10">
+```
+
+**بعد:**
+```tsx
+<div className="fixed inset-0 z-50 flex items-center justify-center">
+  <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+  <div className="relative bg-bg-card ... z-10 pointer-events-auto">
+```
+
+### التغييرات:
+1. ✅ تغيير الـ overlay من `fixed` إلى `absolute`
+2. ✅ إضافة `pointer-events-auto` للمحتوى
+
+### الملفات المعدلة:
+- `src/components/ui/Modal.tsx` - إصلاح z-index و pointer events
+
+### الفائدة:
+- ✅ الأزرار الآن قابلة للنقر
+- ✅ يمكن تأكيد أو إلغاء العمليات بشكل طبيعي
+- ✅ الـ overlay لا يزال يعمل (النقر عليه يغلق المودال)
+
+---
+
 ## [FIXED] خطأ OpenAI في بناء Vercel — 2026-04-08
 
 ### المشكلة:

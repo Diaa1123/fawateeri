@@ -2,6 +2,77 @@
 
 ---
 
+## [FIXED] Middleware لا يعمل على Dynamic Routes — 2026-04-08
+
+### المشكلة:
+لا يمكن تحديث حالة الفاتورة (تم الدفع / إلغاء) - الأزرار لا تعمل ويظهر خطأ 403 أو 405.
+
+السبب الجذري: الـ middleware كان له matcher محدد بمسارات ثابتة فقط، ولم يشمل dynamic routes مثل `/api/invoices/[id]`، مما يعني أن الـ headers (`x-user-role`, `x-username`) لم تكن تُضاف للـ request.
+
+### الحل:
+تحديث الـ middleware matcher لتشمل جميع المسارات.
+
+#### في `middleware.ts`:
+
+**قبل:**
+```typescript
+export const config = {
+  matcher: [
+    '/api/:path*',
+    '/',
+    '/invoices',
+    '/archive',
+    '/add',
+    '/users',
+  ],
+};
+```
+
+**بعد:**
+```typescript
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    '/((?!_next/static|_next/image|favicon.ico).*)',
+  ],
+};
+```
+
+#### في `src/app/api/invoices/[id]/route.ts`:
+
+أضفت logging للـ debug:
+```typescript
+console.log('🔍 PATCH Request Headers:', {
+  role,
+  username: request.headers.get('x-username'),
+  userId: request.headers.get('x-user-id'),
+  authorization: request.headers.get('authorization') ? 'present' : 'missing'
+});
+```
+
+وأضفت runtime config:
+```typescript
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+```
+
+### الملفات المعدلة:
+- `middleware.ts` - تحديث matcher لتشمل جميع المسارات
+- `src/app/api/invoices/[id]/route.ts` - إضافة logging و runtime config
+
+### الفائدة:
+- ✅ الـ middleware الآن يعمل على **جميع** المسارات بما فيها dynamic routes
+- ✅ الـ headers (`x-user-role`, `x-username`) تُضاف لجميع الـ requests
+- ✅ يمكن تحديث حالة الفاتورة بنجاح
+- ✅ أزرار "تم الدفع" و "إلغاء" تعمل بشكل صحيح
+
+---
+
 ## [FIXED] أزرار Modal غير قابلة للنقر — 2026-04-08
 
 ### المشكلة:

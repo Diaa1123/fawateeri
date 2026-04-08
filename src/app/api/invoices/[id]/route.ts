@@ -50,9 +50,18 @@ export async function PATCH(
     // 1. Check role (only admin and viewer can update)
     const role = request.headers.get('x-user-role');
 
+    // Debug logging
+    console.log('🔍 PATCH Request Headers:', {
+      role,
+      username: request.headers.get('x-username'),
+      userId: request.headers.get('x-user-id'),
+      authorization: request.headers.get('authorization') ? 'present' : 'missing'
+    });
+
     if (role !== 'admin' && role !== 'viewer') {
+      console.error('❌ Permission denied. Role:', role);
       return NextResponse.json<ApiResponse<null>>(
-        { success: false, error: 'غير مصرح. فقط الأدمن والمشاهد يمكنهم تحديث حالة الفاتورة' },
+        { success: false, error: `غير مصرح. فقط الأدمن والمشاهد يمكنهم تحديث حالة الفاتورة. دورك الحالي: ${role || 'غير محدد'}` },
         { status: 403 }
       );
     }

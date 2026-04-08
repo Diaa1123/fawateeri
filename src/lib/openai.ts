@@ -2,13 +2,22 @@ import OpenAI from 'openai';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-if (!OPENAI_API_KEY) {
-  throw new Error('Missing OPENAI_API_KEY environment variable');
-}
+// Lazy initialization - only create client when needed
+let openai: OpenAI | null = null;
 
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-});
+function getOpenAIClient(): OpenAI {
+  if (!OPENAI_API_KEY) {
+    throw new Error('Missing OPENAI_API_KEY environment variable');
+  }
+
+  if (!openai) {
+    openai = new OpenAI({
+      apiKey: OPENAI_API_KEY,
+    });
+  }
+
+  return openai;
+}
 
 export interface ExtractedInvoiceData {
   invoice_number?: string;
@@ -58,7 +67,8 @@ ${text}
 
 أرجع JSON فقط بدون أي نص آخر.`;
 
-    const response = await openai.chat.completions.create({
+    const client = getOpenAIClient();
+    const response = await client.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {

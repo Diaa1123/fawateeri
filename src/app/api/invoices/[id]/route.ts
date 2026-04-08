@@ -3,6 +3,10 @@ import { getRecord, updateRecord, updateInvoice, updateVendorInvoice } from '@/l
 import { Invoice } from '@/types/invoice';
 import { ApiResponse } from '@/types/api';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 /**
  * GET /api/invoices/[id] - Get a single invoice by ID
  */

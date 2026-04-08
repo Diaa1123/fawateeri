@@ -57,8 +57,9 @@ export async function POST(request: Request) {
       success: true,
       token,
       user: {
+        id: user.id,
         username: user.username,
-        displayName: user.display_name,
+        display_name: user.display_name,
         role: user.role,
       },
     });

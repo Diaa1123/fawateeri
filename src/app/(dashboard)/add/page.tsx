@@ -23,24 +23,37 @@ export default function AddInvoicePage() {
 
     try {
       const token = localStorage.getItem('auth_token');
+
+      const payload = {
+        ...data,
+        _source: 'vendors', // Save to Vendors table
+        uploaded_by: user?.display_name || user?.username,
+        uploaded_at: new Date().toISOString().split('T')[0],
+        source: 'يدوي',
+        status: 'جديدة',
+      };
+
+      console.log('Sending invoice data:', payload);
+
       const response = await fetch('/api/invoices', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          ...data,
-          uploaded_by: user?.displayName || user?.username,
-          uploaded_at: new Date().toISOString(),
-          source: 'يدوي',
-          status: 'جديدة',
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'فشل حفظ الفاتورة');
+        let errorMessage = 'فشل حفظ الفاتورة';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch {
+          // If response is not JSON, use default message
+          errorMessage = `خطأ في الخادم (${response.status})`;
+        }
+        throw new Error(errorMessage);
       }
 
       setShowSuccess(true);
@@ -71,7 +84,7 @@ export default function AddInvoicePage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-xl font-bold text-text-primary">
-              مرحباً، {user.displayName}
+              مرحباً، {user.display_name || user.username}
             </h1>
             <p className="text-sm text-text-muted">فريق العمل</p>
           </div>

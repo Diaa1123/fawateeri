@@ -1,14 +1,27 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 import { useInvoices } from '@/hooks/useInvoices';
 import { InvoiceCard } from '@/components/shared/InvoiceCard';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { FileText } from 'lucide-react';
 
 export default function InvoicesPage() {
+  const router = useRouter();
+  const { user } = useAuth();
   const { data: invoices, isLoading, error } = useInvoices('جديدة');
 
-  if (isLoading) {
+  // Redirect team users to /add page
+  useEffect(() => {
+    if (user && user.role === 'team') {
+      router.replace('/add');
+    }
+  }, [user, router]);
+
+  // Don't render for team users - show loading instead
+  if (isLoading || (user && user.role === 'team')) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">

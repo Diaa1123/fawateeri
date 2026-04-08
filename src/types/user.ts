@@ -14,5 +14,13 @@ export interface User {
 export interface UserPayload {
   userId: string;
   username: string;
+  display_name?: string;
+  role: UserRole;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  display_name?: string;
   role: UserRole;
 }

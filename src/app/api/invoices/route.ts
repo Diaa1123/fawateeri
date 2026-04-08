@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listRecords, createRecord } from '@/lib/airtable';
+import { listRecords, createRecord, createVendorInvoice, getAllInvoices, getVendorInvoices, getEmailInvoices } from '@/lib/airtable';
 import { Invoice } from '@/types/invoice';
 import { ApiResponse, PaginatedResponse } from '@/types/api';
 import { createInvoiceSchema } from '@/lib/validations';
@@ -39,16 +39,41 @@ export async function GET(request: Request) {
       ? `AND(${filters.join(', ')})`
       : undefined;
 
-    // Get invoices from Airtable
-    const result = await listRecords<Invoice>('Invoices', {
-      filterByFormula,
-      maxRecords: limit ? parseInt(limit) : 50,
-      offset: offset || undefined,
+    // Get invoices from BOTH tables (Invoices + Vendors) and merge them
+    const [emailInvoicesResult, vendorsResult] = await Promise.all([
+      // Invoices table (email/webhook source) with field mapping
+      getEmailInvoices(filterByFormula),
+      // Vendors table (manual input) with field mapping
+      getVendorInvoices(filterByFormula),
+    ]);
+
+    console.log('📊 Email invoices count:', emailInvoicesResult.records.length);
+    console.log('📊 Vendor invoices count:', vendorsResult.records.length);
+    console.log('📊 Email sample:', emailInvoicesResult.records[0]);
+    console.log('📊 Vendor sample:', vendorsResult.records[0]);
+
+    // Merge both sources (both are already mapped with _source field)
+    const allRecords = [...emailInvoicesResult.records, ...vendorsResult.records];
+
+    // Sort by invoice_date descending (newest first)
+    const sortedRecords = allRecords.sort((a, b) => {
+      // Handle missing or invalid dates
+      const dateA = a.invoice_date ? new Date(a.invoice_date).getTime() : 0;
+      const dateB = b.invoice_date ? new Date(b.invoice_date).getTime() : 0;
+
+      // Check for invalid dates (NaN)
+      const validDateA = isNaN(dateA) ? 0 : dateA;
+      const validDateB = isNaN(dateB) ? 0 : dateB;
+
+      return validDateB - validDateA;
     });
 
     return NextResponse.json<ApiResponse<PaginatedResponse<Invoice>>>({
       success: true,
-      data: result,
+      data: {
+        records: sortedRecords,
+        offset: vendorsResult.offset, // Use vendor's offset for pagination
+      },
     });
   } catch (error) {
     console.error('Error fetching invoices:', error);
@@ -81,9 +106,18 @@ export async function POST(request: Request) {
 
     // Parse body
     const body = await request.json();
+    console.log('📨 Received body:', JSON.stringify(body, null, 2));
+
+    // Extract _source and remove internal fields
+    const { _source, invoice_number, ...invoiceData } = body;
+    console.log('📋 Invoice data (after removing _source, invoice_number):', JSON.stringify(invoiceData, null, 2));
 
     // Validate with Zod
-    const validation = createInvoiceSchema.safeParse(body);
+    const validation = createInvoiceSchema.safeParse(invoiceData);
+    console.log('✅ Validation result:', validation.success ? 'PASSED' : 'FAILED');
+    if (!validation.success) {
+      console.log('❌ Validation errors:', JSON.stringify(validation.error.issues, null, 2));
+    }
 
     if (!validation.success) {
       const errorMessage = validation.error.issues[0]?.message || 'بيانات غير صحيحة';
@@ -98,23 +132,62 @@ export async function POST(request: Request) {
     // Extract month_year from invoice_date (YYYY-MM)
     const monthYear = data.invoice_date.substring(0, 7);
 
-    // Create invoice in Airtable
-    const newInvoice = await createRecord<Invoice>('Invoices', {
-      invoice_number: data.invoice_number,
+    // Convert base64 PDF to Airtable attachment format if provided
+    let airtableAttachment = undefined;
+    if (data.invoice_file) {
+      if (data.invoice_file.base64 && data.invoice_file.filename) {
+        // Base64 data from frontend - convert to Airtable attachment format
+        // Airtable expects: [{ url: "data:..." }] for base64
+        airtableAttachment = [{
+          url: data.invoice_file.base64,
+          filename: data.invoice_file.filename
+        }];
+      } else if (data.invoice_file.url) {
+        // Regular URL
+        airtableAttachment = [{ url: data.invoice_file.url }];
+      } else if (Array.isArray(data.invoice_file)) {
+        // Already in Airtable format
+        airtableAttachment = data.invoice_file;
+      }
+    }
+
+    // Prepare invoice data for Airtable
+    const invoicePayload: Partial<Invoice> = {
       vendor_name: data.vendor_name,
       amount: data.amount,
-      currency: data.currency,
+      currency: data.currency || 'SAR',
       invoice_date: data.invoice_date,
       due_date: data.due_date,
-      pdf_url: data.pdf_url,
-      payment_link: data.payment_link,
       notes: data.notes,
       source: 'يدوي' as const,
-      status: 'جديدة',
+      status: 'جديدة' as const,
       uploaded_by: username,
       uploaded_at: new Date().toISOString().split('T')[0],
       month_year: monthYear,
-    });
+      // Vendors table specific fields
+      payment_URL: data.payment_URL || data.payment_link,
+      email: data.email,
+      currency_preference: data.currency_preference,
+      invoice_file: airtableAttachment,
+    };
+
+    // Create invoice in correct table based on _source
+    console.log('📤 Sending to Airtable (_source:', _source, '):', JSON.stringify(invoicePayload, null, 2));
+
+    let newInvoice: Invoice;
+    if (_source === 'vendors') {
+      // Create in Vendors table (manual invoices from /add page)
+      newInvoice = await createVendorInvoice(invoicePayload);
+    } else {
+      // Create in Invoices table (email/webhook invoices) - legacy support
+      newInvoice = await createRecord<Invoice>('Invoices', {
+        ...invoicePayload,
+        pdf_url: data.pdf_url,
+        payment_link: data.payment_link,
+      });
+    }
+
+    console.log('✅ Invoice created successfully:', newInvoice.id);
 
     return NextResponse.json<ApiResponse<Invoice>>(
       {

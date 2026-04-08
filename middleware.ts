@@ -57,6 +57,26 @@ export async function middleware(request: NextRequest) {
     );
   }
 
+  // Team role can only access /add page
+  if (payload.role === 'team') {
+    // Allow /add and /api/invoices (POST only for adding invoices)
+    const allowedForTeam = pathname === '/add' || pathname.startsWith('/api/invoices');
+
+    if (!allowedForTeam) {
+      // Redirect to /add for page requests (including root /)
+      if (!pathname.startsWith('/api/')) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/add';
+        return NextResponse.redirect(url);
+      }
+      // Block API requests
+      return NextResponse.json(
+        { success: false, error: 'غير مصرح. فريق العمل يمكنه فقط الوصول لصفحة إضافة الفواتير' },
+        { status: 403 }
+      );
+    }
+  }
+
   // Add user info to headers for route handlers
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-user-id', payload.userId);

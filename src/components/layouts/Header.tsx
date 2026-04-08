@@ -27,7 +27,7 @@ export function Header() {
               مرحباً،
             </h2>
             <p className="text-base font-semibold text-text-primary">
-              {user?.displayName || user?.username || 'مستخدم'}
+              {user?.display_name || user?.username || 'مستخدم'}
             </p>
           </div>
         </div>

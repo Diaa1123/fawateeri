@@ -43,8 +43,29 @@ export default function DashboardLayout({
 
   // Team users: Simple layout without sidebar/header
   if (isTeam) {
+    const handleLogout = () => {
+      localStorage.removeItem('auth_token');
+      router.push('/login');
+    };
+
     return (
       <div className="min-h-screen bg-bg-primary">
+        {/* Simple Header for Team with Logout Button */}
+        <div className="border-b border-border-default bg-bg-card p-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div>
+              <h1 className="text-lg font-semibold text-text-primary">فواتيري</h1>
+              <p className="text-sm text-text-muted">مرحباً، {user?.display_name || user?.username}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 rounded-lg bg-bg-primary hover:bg-bg-secondary text-text-secondary text-sm transition-colors duration-150"
+            >
+              تسجيل الخروج
+            </button>
+          </div>
+        </div>
+
         <main className="p-6">
           {children}
         </main>

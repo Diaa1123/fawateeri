@@ -6,6 +6,7 @@ import { useStats } from '@/hooks/useStats';
 import { useAuth } from '@/hooks/useAuth';
 import { StatsCard } from '@/components/shared/StatsCard';
 import { ActivityLog } from '@/components/shared/ActivityLog';
+import { MonthlyChart } from '@/components/shared/MonthlyChart';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { DollarSign, Clock, FileText, BarChart3 } from 'lucide-react';
 
@@ -22,7 +23,15 @@ export default function DashboardPage() {
     }
   }, [router]);
 
-  if (isLoading) {
+  // Redirect team users to /add page
+  useEffect(() => {
+    if (user && user.role === 'team') {
+      router.replace('/add');
+    }
+  }, [user, router]);
+
+  // Don't render dashboard for team users - show loading instead
+  if (isLoading || (user && user.role === 'team')) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
@@ -101,11 +110,15 @@ export default function DashboardPage() {
         {/* Chart Section */}
         <div className="border-t border-border-default pt-6">
           <h2 className="text-lg font-semibold text-text-primary mb-4">
-            الإحصائيات الشهرية
+            الإحصائيات الشهرية (آخر 6 أشهر)
           </h2>
-          <div className="text-center py-12 text-text-muted">
-            سيتم إضافة الرسم البياني قريباً (Recharts)
-          </div>
+          {stats?.monthlyData && stats.monthlyData.length > 0 ? (
+            <MonthlyChart data={stats.monthlyData} />
+          ) : (
+            <div className="text-center py-12 text-text-muted">
+              لا توجد بيانات كافية لعرض الرسم البياني
+            </div>
+          )}
         </div>
 
         {/* Admin Only: Icon Reorder Button */}

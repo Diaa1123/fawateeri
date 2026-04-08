@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 import { useInvoices } from '@/hooks/useInvoices';
 import { InvoiceTable } from '@/components/shared/InvoiceTable';
 import { InvoiceCard } from '@/components/shared/InvoiceCard';
@@ -13,6 +15,15 @@ import { formatCurrency } from '@/lib/utils';
 type ArchiveStatus = 'all' | 'paid' | 'cancelled';
 
 export default function ArchivePage() {
+  const router = useRouter();
+  const { user } = useAuth();
+
+  // Redirect team users to /add page
+  useEffect(() => {
+    if (user && user.role === 'team') {
+      router.replace('/add');
+    }
+  }, [user, router]);
   // Set default to current month
   const currentMonth = useMemo(() => {
     const now = new Date();
@@ -36,9 +47,13 @@ export default function ArchivePage() {
 
     if (statusFilter === 'paid') return paid;
     if (statusFilter === 'cancelled') return cancelled;
-    return [...paid, ...cancelled].sort((a, b) =>
-      new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
-    );
+    return [...paid, ...cancelled].sort((a, b) => {
+      const dateA = a.uploaded_at ? new Date(a.uploaded_at).getTime() : 0;
+      const dateB = b.uploaded_at ? new Date(b.uploaded_at).getTime() : 0;
+      const validDateA = isNaN(dateA) ? 0 : dateA;
+      const validDateB = isNaN(dateB) ? 0 : dateB;
+      return validDateB - validDateA;
+    });
   }, [paidInvoices, cancelledInvoices, statusFilter]);
 
   // Generate last 12 months
@@ -72,14 +87,15 @@ export default function ArchivePage() {
     const cancelled = filteredInvoices.filter(inv => inv.status === 'ملغاة');
 
     return {
-      totalPaid: paid.reduce((sum, inv) => sum + inv.amount, 0),
+      totalPaid: paid.reduce((sum, inv) => sum + (inv.amount || 0), 0),
       paidCount: paid.length,
-      totalCancelled: cancelled.reduce((sum, inv) => sum + inv.amount, 0),
+      totalCancelled: cancelled.reduce((sum, inv) => sum + (inv.amount || 0), 0),
       cancelledCount: cancelled.length,
     };
   }, [filteredInvoices]);
 
-  if (isLoading) {
+  // Don't render for team users - show loading instead
+  if (isLoading || (user && user.role === 'team')) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">

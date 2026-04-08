@@ -119,14 +119,15 @@ export function InvoiceTable({ invoices }: InvoiceTableProps) {
               </td>
               <td className="px-4 py-3">
                 {invoice.pdf_url ? (
-                  <Link
+                  <a
                     href={invoice.pdf_url}
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-bg-primary hover:bg-bg-secondary text-text-secondary text-sm transition-colors duration-150"
                   >
                     <FileText className="w-4 h-4" />
                     <span>عرض</span>
-                  </Link>
+                  </a>
                 ) : (
                   <span className="text-text-muted text-sm">-</span>
                 )}

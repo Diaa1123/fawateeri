@@ -2,6 +2,622 @@
 
 ---
 
+## [FIXED] أخطاء TypeScript مع الحقول الاختيارية — 2026-04-08
+
+### المشكلة:
+```
+Type error: Argument of type 'string | undefined' is not assignable to parameter of type 'string | number | Date'.
+```
+
+بعد جعل جميع حقول `Invoice` اختيارية، ظهرت عدة أخطاء TypeScript في:
+- الترتيب بناءً على `uploaded_at` و `invoice_date`
+- حساب المجاميع مع `amount`
+- استخدام `Object.keys()` على records
+
+### الحل:
+إضافة فحوصات آمنة لجميع الحقول الاختيارية:
+
+#### 1. في `src/app/(dashboard)/archive/page.tsx`:
+
+**الترتيب الآمن:**
+```typescript
+// ❌ قبل:
+.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())
+
+// ✅ بعد:
+.sort((a, b) => {
+  const dateA = a.uploaded_at ? new Date(a.uploaded_at).getTime() : 0;
+  const dateB = b.uploaded_at ? new Date(b.uploaded_at).getTime() : 0;
+  const validDateA = isNaN(dateA) ? 0 : dateA;
+  const validDateB = isNaN(dateB) ? 0 : dateB;
+  return validDateB - validDateA;
+})
+```
+
+**حساب المجاميع:**
+```typescript
+// ❌ قبل:
+paid.reduce((sum, inv) => sum + inv.amount, 0)
+
+// ✅ بعد:
+paid.reduce((sum, inv) => sum + (inv.amount || 0), 0)
+```
+
+#### 2. في `src/lib/airtable.ts`:
+
+**ترتيب الفواتير:**
+```typescript
+// نفس المنطق الآمن لترتيب invoice_date
+return all.sort((a, b) => {
+  const dateA = a.invoice_date ? new Date(a.invoice_date).getTime() : 0;
+  const dateB = b.invoice_date ? new Date(b.invoice_date).getTime() : 0;
+  const validDateA = isNaN(dateA) ? 0 : dateA;
+  const validDateB = isNaN(dateB) ? 0 : dateB;
+  return validDateB - validDateA;
+});
+```
+
+**Object.keys آمن:**
+```typescript
+// ❌ قبل:
+Object.keys(result.records[0])
+
+// ✅ بعد:
+result.records[0] ? Object.keys(result.records[0]) : []
+```
+
+### الملفات المعدلة:
+- `src/app/(dashboard)/archive/page.tsx` - إصلاح الترتيب والمجاميع
+- `src/lib/airtable.ts` - إصلاح الترتيب و Object.keys
+
+### اختبار:
+```bash
+npx tsc --noEmit  # ✅ نجح بدون أخطاء
+```
+
+---
+
+## [FIXED] خطأ Link مع الروابط الخارجية — 2026-04-08
+
+### المشكلة:
+```
+Error: Cannot prefetch 'https:' because it cannot be converted to a URL.
+at InvoiceTable (src/components/shared/InvoiceTable.tsx:122:19)
+```
+
+استخدام `Link` من Next.js مع روابط خارجية (Google Drive URLs, payment URLs) يسبب خطأ في المتصفح لأن `Link` مخصص للروابط الداخلية فقط.
+
+### الحل:
+استبدال `Link` بـ `<a>` في جميع الروابط الخارجية:
+
+#### 1. في `src/components/shared/InvoiceTable.tsx`:
+```typescript
+// ❌ قبل:
+<Link href={invoice.pdf_url} target="_blank">
+
+// ✅ بعد:
+<a href={invoice.pdf_url} target="_blank" rel="noopener noreferrer">
+```
+
+#### 2. في `src/components/shared/InvoiceCard.tsx`:
+```typescript
+// ❌ قبل:
+<Link href={paymentUrl} target="_blank">
+
+// ✅ بعد:
+<a href={paymentUrl} target="_blank" rel="noopener noreferrer">
+```
+
+### الملفات المعدلة:
+- `src/components/shared/InvoiceTable.tsx` - استبدال Link بـ a للـ pdf_url
+- `src/components/shared/InvoiceCard.tsx` - استبدال Link بـ a للـ payment_URL
+
+### ملاحظات:
+- أضفنا `rel="noopener noreferrer"` للأمان عند فتح روابط خارجية
+- `Link` من Next.js يُستخدم فقط للتنقل الداخلي (`/dashboard`, `/archive`, إلخ)
+- الروابط الخارجية (https://drive.google.com, https://payment.com) تحتاج `<a>` عادي
+
+---
+
+## [FIXED] معالجة الحقول الفاضية - Invalid time value — 2026-04-07
+
+### المشكلة:
+```
+RangeError: Invalid time value
+at formatDateShort
+```
+
+عند عرض الفواتير، بعض الفواتير ما عندها `invoice_date` أو `amount` أو حقول أخرى، فالتطبيق يتعطل.
+
+### الحل:
+جعل **جميع الحقول optional** والتعامل الآمن مع القيم الفاضية:
+
+#### 1. في `src/lib/utils.ts`:
+
+**formatCurrency:**
+```typescript
+export function formatCurrency(amount?: number | null, currency: string = 'SAR'): string {
+  if (amount === null || amount === undefined || isNaN(amount)) {
+    return `0.00 ${currency}`;
+  }
+  // ...
+}
+```
+
+**formatDate & formatDateShort:**
+```typescript
+export function formatDateShort(dateString?: string | null): string {
+  if (!dateString) return '-';
+
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '-';
+    // ...
+  } catch {
+    return '-';
+  }
+}
+```
+
+#### 2. في `src/types/invoice.ts`:
+جعلنا **كل الحقول optional** ماعدا `id`:
+
+```typescript
+export interface Invoice {
+  id: string;
+  invoice_number?: string;  // كان required
+  vendor_name?: string;      // كان required
+  amount?: number;           // كان required
+  currency?: string;         // كان required
+  invoice_date?: string;     // كان required
+  // ... كل الحقول optional
+}
+```
+
+### النتيجة:
+- ✅ لو الفاتورة ما عندها تاريخ → يعرض `-`
+- ✅ لو ما عندها مبلغ → يعرض `0.00 SAR`
+- ✅ لو أي حقل فاضي → ما يتعطل التطبيق
+- ✅ المستخدم يقدر يعدّل البيانات يدوياً في المنصة
+
+### الملفات المعدّلة:
+- `src/lib/utils.ts` - Safe formatting functions
+- `src/types/invoice.ts` - All fields optional except id
+
+---
+
+## [FIXED] دمج الفواتير من الجدولين (Invoices + Vendors) — 2026-04-07
+
+### المشكلة:
+بعد تعديل GET `/api/invoices` للجلب من Vendors table فقط، اختفت الفواتير من Invoices table (الإيميلات).
+
+**المطلوب:** عرض الفواتير من **الجدولين معاً** في نفس القائمة:
+- **Invoices table** - فواتير الإيميلات/Webhook (Make.com)
+- **Vendors table** - فواتير يدوية من `/add`
+
+### الحل:
+في `src/app/api/invoices/route.ts` → GET endpoint:
+
+**نجلب من الجدولين بالتوازي:**
+```typescript
+const [invoicesResult, vendorsResult] = await Promise.all([
+  // Invoices table (email/webhook source)
+  listRecords<Invoice>(process.env.AIRTABLE_INVOICES_TABLE || 'Invoices', {
+    filterByFormula,
+    maxRecords: limit ? parseInt(limit) : 50,
+  }),
+  // Vendors table (manual input with field mapping)
+  getVendorInvoices(filterByFormula),
+]);
+```
+
+**نضيف `_source` للتمييز:**
+```typescript
+const invoicesRecords = invoicesResult.records.map(inv => ({
+  ...inv,
+  _source: 'invoices' as const,
+  _tableId: process.env.AIRTABLE_INVOICES_TABLE,
+}));
+```
+
+**ندمج ونرتب:**
+```typescript
+const allRecords = [...invoicesRecords, ...vendorsResult.records];
+
+const sortedRecords = allRecords.sort((a, b) => {
+  const dateA = new Date(a.invoice_date || 0).getTime();
+  const dateB = new Date(b.invoice_date || 0).getTime();
+  return dateB - dateA; // الأحدث أولاً
+});
+```
+
+### النتيجة:
+- ✅ صفحة `/invoices` تعرض الفواتير من **الجدولين**
+- ✅ فواتير الإيميلات موجودة
+- ✅ الفواتير اليدوية موجودة
+- ✅ مرتبة من الأحدث للأقدم
+- ✅ حقل `_source` يميّز مصدر كل فاتورة
+
+### الملفات المعدّلة:
+- `src/app/api/invoices/route.ts` - دمج الجدولين في GET endpoint
+
+---
+
+## [FIXED] TypeScript Error - invoice_file Type — 2026-04-07
+
+### المشكلة:
+```
+Type error: Type 'any[] | undefined' is not assignable to type 'string | undefined'.
+```
+
+في `src/types/invoice.ts`، حقل `invoice_file` كان معرّف كـ `string`:
+```typescript
+invoice_file?: string;
+```
+
+لكن Airtable Attachment field يكون **array** من objects:
+```typescript
+[{ url: "...", filename: "..." }]
+```
+
+### الحل:
+أضفنا interface جديد وعدّلنا الـ type:
+
+```typescript
+export interface AirtableAttachment {
+  url: string;
+  filename?: string;
+}
+
+export interface Invoice {
+  // ...
+  invoice_file?: AirtableAttachment[] | any; // Airtable attachment format
+  // ...
+}
+```
+
+### الملفات المعدّلة:
+- `src/types/invoice.ts` - إضافة `AirtableAttachment` interface
+
+---
+
+## [FIXED] عرض الفواتير من Vendors Table في صفحة /invoices — 2026-04-07
+
+### المشكلة:
+صفحة `/invoices` (الفواتير الجديدة) كانت تجيب البيانات من **Invoices table** (الجدول القديم - للإيميلات)، لكن الآن نستخدم **Vendors table** (الجدول الجديد - للفواتير اليدوية).
+
+المستخدم يضيف فاتورة من `/add` → تُحفظ في Vendors table ✅ لكن ما تظهر في `/invoices` ❌
+
+### السبب:
+في `src/app/api/invoices/route.ts` → GET endpoint:
+```typescript
+const result = await listRecords<Invoice>('Invoices', { ... });
+```
+
+كان يجيب من `Invoices` table (القديم).
+
+### الحل:
+
+#### 1. في `src/lib/airtable.ts`:
+
+**أضفنا Mapper Function:**
+```typescript
+function mapVendorFieldsFromAirtable(airtableRecord: any): Invoice {
+  return {
+    id: airtableRecord.id,
+    vendor_name: airtableRecord['vendor name'],  // Airtable uses spaces
+    amount: airtableRecord['amount'],
+    currency: airtableRecord['currency'],
+    invoice_date: airtableRecord['invoice date'],
+    due_date: airtableRecord['due date'],
+    status: airtableRecord['status'],
+    notes: airtableRecord['notes'],
+    payment_URL: airtableRecord['payment URL'],
+    uploaded_by: airtableRecord['uploaded by'],
+    email: airtableRecord['email'],
+    invoice_file: airtableRecord['invoice file'],
+    // ... all other fields
+    _source: 'vendors',
+    _tableId: VENDORS_TABLE_ID,
+  } as Invoice;
+}
+```
+
+**السبب:** Airtable يُخزن أسماء الأعمدة بمسافات (مثل `vendor name`)، لكن الكود يستخدم underscores (مثل `vendor_name`).
+
+**أضفنا Function جديدة:**
+```typescript
+export async function getVendorInvoices(filterByFormula?: string): Promise<PaginatedResponse<Invoice>> {
+  if (!VENDORS_TABLE_ID) {
+    throw new Error('VENDORS_TABLE_ID not configured');
+  }
+
+  const result = await listRecords(VENDORS_TABLE_ID, {
+    filterByFormula,
+    maxRecords: 50,
+  });
+
+  // Map Airtable field names to code field names
+  const mappedRecords = result.records.map((record: any) => mapVendorFieldsFromAirtable(record));
+
+  return {
+    records: mappedRecords,
+    offset: result.offset,
+  };
+}
+```
+
+#### 2. في `src/app/api/invoices/route.ts`:
+
+**قبل:**
+```typescript
+const result = await listRecords<Invoice>('Invoices', {
+  filterByFormula,
+  maxRecords: limit ? parseInt(limit) : 50,
+});
+```
+
+**بعد:**
+```typescript
+// Get invoices from Vendors table with proper field mapping
+const result = await getVendorInvoices(filterByFormula);
+```
+
+### النتيجة:
+- ✅ صفحة `/invoices` تعرض الفواتير من **Vendors table**
+- ✅ أي فاتورة تُضاف من `/add` بتظهر فوراً في `/invoices`
+- ✅ الـ field mapping صحيح (من `vendor name` لـ `vendor_name`)
+- ✅ الفلترة تشتغل (status, month_year)
+
+### الملفات المعدّلة:
+- `src/lib/airtable.ts` - إضافة `mapVendorFieldsFromAirtable()` + `getVendorInvoices()`
+- `src/app/api/invoices/route.ts` - استخدام `getVendorInvoices()` بدل `listRecords()`
+
+---
+
+## [FIXED] إضافة Currency و PDF Upload لـ Vendors Table — 2026-04-07
+
+### المشكلة:
+بعد نجاح حفظ الفاتورة في Airtable Vendors table، لاحظنا مشكلتين:
+1. ✅ الفاتورة تُحفظ بنجاح (ID: recqdc8ERwYNaXP34)
+2. ❌ حقل `currency` موجود في payload لكن **مو موجود** في Final Airtable fields
+3. ❌ حقل `notes` موجود في payload لكن **مو موجود** في Final Airtable fields
+4. ❌ PDF Upload معطّل (Google Drive credentials invalid)
+
+### السبب:
+في `src/lib/airtable.ts` → `createVendorInvoice()`:
+```typescript
+if (fields.currency) airtableFields['currency'] = fields.currency;
+if (fields.notes) airtableFields['notes'] = fields.notes;
+```
+
+المشكلة: `if (fields.currency)` يتحقق من **truthiness**.
+- لو `currency = "SAR"` → truthy ✅
+- لو `notes = ""` → **falsy ❌** (string فاضي = false في JavaScript)
+
+يعني الحقول اللي قيمتها string فاضي `""` ما تُرسل لـ Airtable!
+
+### الحل:
+
+#### 1. في `src/lib/airtable.ts` - `createVendorInvoice()`:
+غيّرنا من `if (field)` إلى `if (field !== undefined)`:
+
+```typescript
+// قبل (خطأ):
+if (fields.currency) airtableFields['currency'] = fields.currency;
+if (fields.notes) airtableFields['notes'] = fields.notes;
+if (fields.payment_URL) airtableFields['payment URL'] = fields.payment_URL;
+
+// بعد (صحيح):
+if (fields.currency !== undefined) airtableFields['currency'] = fields.currency;
+if (fields.notes !== undefined) airtableFields['notes'] = fields.notes;
+if (fields.payment_URL !== undefined) airtableFields['payment URL'] = fields.payment_URL;
+```
+
+هكذا حتى لو القيمة string فاضي `""`, بيرسلها لـ Airtable.
+
+#### 2. نفس الإصلاح في `updateVendorInvoice()`:
+نفس المنطق - تحقق من `!== undefined` بدل truthiness.
+
+#### 3. PDF Upload - تحويل من Google Drive لـ Base64:
+
+**المشكلة:** Google Drive credentials غير صالحة.
+
+**الحل:** بدل رفع PDF لـ Google Drive ثم أخذ URL، نرفع PDF **مباشرة لـ Airtable** عبر Base64.
+
+**في `src/components/forms/InvoiceForm.tsx`:**
+
+```typescript
+const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  setPdfFile(file);
+  setUploadingPdf(true);
+
+  try {
+    // Convert file to base64 for Airtable attachment
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      // Set the base64 data with filename
+      setPdfUrl(JSON.stringify({
+        filename: file.name,
+        data: base64String
+      }));
+      setUploadingPdf(false);
+    };
+    reader.onerror = () => {
+      throw new Error('فشل قراءة الملف');
+    };
+    reader.readAsDataURL(file);
+  } catch (error) {
+    console.error('Error reading PDF:', error);
+    alert('فشل قراءة الملف. يمكنك المتابعة بدون PDF.');
+    setPdfFile(null);
+    setUploadingPdf(false);
+  }
+};
+```
+
+**في `onFormSubmit`:**
+```typescript
+const onFormSubmit = async (data: InvoiceFormData) => {
+  let pdfAttachment = undefined;
+
+  if (pdfUrl) {
+    try {
+      const pdfData = JSON.parse(pdfUrl);
+      if (pdfData.filename && pdfData.data) {
+        // Send base64 data - backend will convert to Airtable attachment
+        pdfAttachment = {
+          filename: pdfData.filename,
+          base64: pdfData.data
+        };
+      }
+    } catch {
+      // If not JSON, might be a regular URL
+      pdfAttachment = { url: pdfUrl };
+    }
+  }
+
+  const formData = {
+    ...data,
+    invoice_file: pdfAttachment,
+    pdf_url: pdfUrl || '',
+  };
+  await onSubmit(formData as any);
+};
+```
+
+**في `src/app/api/invoices/route.ts`:**
+```typescript
+// Convert base64 PDF to Airtable attachment format
+let airtableAttachment = undefined;
+if (data.invoice_file) {
+  if (data.invoice_file.base64 && data.invoice_file.filename) {
+    // Base64 data from frontend - convert to Airtable attachment format
+    airtableAttachment = [{
+      url: data.invoice_file.base64,
+      filename: data.invoice_file.filename
+    }];
+  } else if (data.invoice_file.url) {
+    // Regular URL
+    airtableAttachment = [{ url: data.invoice_file.url }];
+  } else if (Array.isArray(data.invoice_file)) {
+    // Already in Airtable format
+    airtableAttachment = data.invoice_file;
+  }
+}
+
+const invoicePayload: Partial<Invoice> = {
+  // ...
+  invoice_file: airtableAttachment,
+};
+```
+
+### النتيجة المتوقعة:
+- ✅ حقل `currency` يُحفظ في Airtable حتى لو "SAR"
+- ✅ حقل `notes` يُحفظ في Airtable حتى لو string فاضي ""
+- ✅ حقل `payment_URL` يُحفظ في Airtable حتى لو string فاضي ""
+- ✅ PDF يُرفع مباشرة لـ Airtable كـ base64 (بدون Google Drive)
+
+### الملفات المعدّلة:
+- `src/lib/airtable.ts` - `createVendorInvoice()` + `updateVendorInvoice()`
+- `src/components/forms/InvoiceForm.tsx` - `handlePdfChange()` + `onFormSubmit()`
+- `src/app/api/invoices/route.ts` - Base64 PDF conversion logic
+
+---
+
+## [DEBUG] إضافة Logging للتحقق من Amount Field — 2026-04-07
+
+### المشكلة:
+عند إضافة فاتورة جديدة، يظهر خطأ runtime:
+```
+Error saving invoice: Error: "مبلغ اجباري" ما اجد له ملف
+```
+
+المستخدم دخّل 999 في حقل المبلغ، لكن النظام يشتكي من أن المبلغ مطلوب. الرسالة غريبة ("ما اجد له ملف") وتشير لاحتمالية أن المشكلة من Airtable API نفسه.
+
+### التشخيص:
+1. ✅ الفورم يستخدم `valueAsNumber: true` في حقل المبلغ
+2. ✅ الـ validation schema يتحقق من amount كـ number
+3. ❓ المشكلة: غير واضح إذا البيانات توصل لـ API route بشكل صحيح
+4. ❓ غير واضح إذا البيانات تُرسل لـ Airtable بشكل صحيح
+
+### الحل:
+إضافة console.log شاملة في كل مراحل المعالجة:
+
+#### 1. في `src/lib/validations.ts`:
+- ✅ تبسيط validation schema لحقل amount
+- ✅ إزالة `invalid_type_error` config object (غير مدعوم في Zod 3.x)
+- ✅ استخدام syntax بسيط ومباشر
+
+```typescript
+amount: z.number().positive('المبلغ يجب أن يكون أكبر من صفر'),
+```
+
+**ملاحظة**: Zod 3.x لا يدعم `invalid_type_error` أو `required_error` في `z.number()` config. الحل: استخدام `.positive()` مباشرة.
+
+#### 2. في `src/app/api/invoices/route.ts`:
+إضافة console.log في 4 مراحل:
+
+```typescript
+// المرحلة 1: استقبال البيانات
+console.log('📨 Received body:', JSON.stringify(body, null, 2));
+
+// المرحلة 2: بعد استخراج _source و invoice_number
+console.log('📋 Invoice data (after removing _source, invoice_number):', JSON.stringify(invoiceData, null, 2));
+
+// المرحلة 3: نتيجة الـ validation
+console.log('✅ Validation result:', validation.success ? 'PASSED' : 'FAILED');
+if (!validation.success) {
+  console.log('❌ Validation errors:', JSON.stringify(validation.error.issues, null, 2));
+}
+
+// المرحلة 4: قبل إرسال لـ Airtable
+console.log('📤 Sending to Airtable (_source:', _source, '):', JSON.stringify(invoicePayload, null, 2));
+
+// المرحلة 5: بعد النجاح
+console.log('✅ Invoice created successfully:', newInvoice.id);
+```
+
+#### 3. في `src/lib/airtable.ts` - `createVendorInvoice()`:
+إضافة console.log في 3 مراحل:
+
+```typescript
+// المرحلة 1: بعد destructuring
+console.log('🔧 createVendorInvoice - fields after destructuring:', JSON.stringify(fields, null, 2));
+
+// المرحلة 2: التحقق من amount
+if (fields.amount !== undefined) {
+  console.log('💰 Amount field:', fields.amount, 'Type:', typeof fields.amount);
+  airtableFields['amount'] = fields.amount;
+} else {
+  console.log('⚠️ Amount is undefined!');
+}
+
+// المرحلة 3: قبل createRecord
+console.log('📮 Final Airtable fields being sent:', JSON.stringify(airtableFields, null, 2));
+
+// المرحلة 4: بعد النجاح
+console.log('✅ Airtable record created successfully:', result.id);
+```
+
+### الخطوة التالية:
+المستخدم يجرّب إضافة فاتورة مرة ثانية ويراقب الـ terminal (backend) والـ browser console (frontend) لرؤية:
+- هل المبلغ يُرسل من الفورم كـ number؟
+- هل الـ validation يمرّ بنجاح؟
+- هل البيانات توصل لـ Airtable بالشكل الصحيح؟
+- في أي مرحلة يحدث الخطأ بالضبط؟
+
+### الملفات المعدّلة:
+- `src/lib/validations.ts` - تحسين amount validation
+- `src/app/api/invoices/route.ts` - إضافة 5 console.log
+- `src/lib/airtable.ts` - إضافة 4 console.log
+
+---
+
 ## [CRITICAL] Turbopack Panic Error — 2026-04-04
 
 ### المشكلة:
@@ -2617,5 +3233,174 @@ git push origin main
 3. ✅ `.gitignore` - تحديث (السماح بـ .env.example)
 
 **الحالة:** ✅ جاهز للنشر
+
+---
+
+## [FIX] إصلاح صفحة إضافة فاتورة — Dual Table Support — 2026-04-07
+
+### المشكلة:
+صفحة إضافة فاتورة (`/add`) كانت تحفظ في جدول `Invoices` القديم بدلاً من جدول `Vendors` الجديد، مما يسبب:
+- ❌ الفواتير اليدوية تُحفظ في نفس جدول الفواتير التلقائية (من Make.com)
+- ❌ الحقل `invoice_number` يُرسل للـ API رغم أنه computed field في Airtable
+- ❌ استخدام `payment_link` بدلاً من `payment_URL` (حسب schema جدول Vendors)
+- ❌ عدم دعم الحقول الجديدة مثل `email`, `currency_preference`, `invoice_file`
+
+### السياق:
+المشروع يستخدم **جدولين منفصلين** في Airtable:
+1. **Invoices** (`tbl5qLg8Vmy2pjj0N`) - للفواتير التلقائية من Make.com webhook
+2. **Vendors** (`tblwwO3URoTCSJ8Qg`) - للفواتير اليدوية من صفحة `/add`
+
+### الإصلاحات المنفّذة:
+
+#### 1. ✅ تحديث POST /api/invoices
+**الملف:** `src/app/api/invoices/route.ts`
+
+**التغييرات:**
+```typescript
+// Import new functions
+import { createVendorInvoice, getAllInvoices } from '@/lib/airtable';
+
+// Extract _source and remove computed fields
+const { _source, invoice_number, ...invoiceData } = body;
+
+// Route to correct table based on _source
+if (_source === 'vendors') {
+  newInvoice = await createVendorInvoice(invoicePayload);
+} else {
+  newInvoice = await createRecord<Invoice>('Invoices', invoicePayload);
+}
+```
+
+**الفائدة:**
+- ✅ الحفظ في جدول `Vendors` عند `_source: 'vendors'`
+- ✅ حذف `invoice_number` قبل الإرسال (computed field)
+- ✅ دعم الحقول الجديدة: `payment_URL`, `email`, `currency_preference`, `invoice_file`
+
+#### 2. ✅ تحديث صفحة /add
+**الملف:** `src/app/(dashboard)/add/page.tsx`
+
+**التغييرات:**
+```typescript
+body: JSON.stringify({
+  ...data,
+  _source: 'vendors', // ← Save to Vendors table
+  source: 'يدوي',
+  status: 'جديدة',
+  uploaded_by: user?.display_name || user?.username,
+  uploaded_at: new Date().toISOString().split('T')[0],
+})
+```
+
+**الفائدة:**
+- ✅ إرسال `_source: 'vendors'` لتحديد الجدول الصحيح
+- ✅ تنسيق `uploaded_at` بصيغة date فقط (YYYY-MM-DD)
+
+#### 3. ✅ تحديث InvoiceForm
+**الملف:** `src/components/forms/InvoiceForm.tsx`
+
+**أ. تحديث Validation Schema:**
+```typescript
+const invoiceSchema = z.object({
+  // invoice_number is computed by Airtable - not needed
+  vendor_name: z.string().min(1, 'اسم المورد مطلوب'),
+  amount: z.number().positive('المبلغ مطلوب'),
+  currency: z.string().optional(),
+  currency_preference: z.string().optional(),
+  invoice_date: z.string().min(1, 'تاريخ الفاتورة مطلوب'),
+  due_date: z.string().min(1, 'تاريخ الاستحقاق مطلوب'),
+  payment_URL: z.string().optional(),  // ← Changed from payment_link
+  email: z.string().optional(),        // ← New field
+  notes: z.string().optional(),
+});
+```
+
+**ب. تحديث defaultValues:**
+```typescript
+const today = new Date().toISOString().split('T')[0];
+
+defaultValues: {
+  vendor_name: '',
+  currency: 'SAR',
+  invoice_date: today,  // ← Auto-fill with today
+  due_date: today,      // ← Auto-fill with today
+  payment_URL: '',
+  email: '',
+  notes: '',
+}
+```
+
+**ج. تحديث Form Fields:**
+- ❌ حذف حقل `invoice_number` (computed)
+- ✅ إضافة حقل `email`
+- ✅ تغيير `payment_link` → `payment_URL`
+- ✅ علامة `*` للحقول المطلوبة
+
+**د. تحديث onSubmit:**
+```typescript
+const formData = {
+  ...data,
+  // For Vendors table, use invoice_file (Airtable Attachment format)
+  invoice_file: pdfUrl ? [{ url: pdfUrl }] : undefined,
+  pdf_url: pdfUrl || '', // Keep for backward compatibility
+};
+```
+
+**الفائدة:**
+- ✅ حقل `invoice_file` بصيغة Airtable Attachment (array of objects)
+- ✅ التواريخ تُعبّأ تلقائياً باليوم الحالي
+- ✅ دعم كامل لـ schema جدول Vendors
+
+#### 4. ✅ التحقق من Airtable Client
+**الملف:** `src/lib/airtable.ts`
+
+**تم التحقق من:**
+- ✅ `VENDORS_TABLE_ID` معرّف ومُستخدم
+- ✅ `createVendorInvoice()` موجودة وتحذف `invoice_number`
+- ✅ `getAllInvoices()` تجمع من الجدولين
+
+#### 5. ✅ التحقق من Environment Variables
+**الملفات:** `.env.local`, `.env.example`
+
+**تم التحقق:**
+- ✅ `AIRTABLE_VENDORS_TABLE_ID=tblwwO3URoTCSJ8Qg` موجود
+- ✅ `.env.example` محدّث بالمتغير الجديد
+
+### الملفات المُعدّلة:
+1. ✅ `src/app/api/invoices/route.ts` - دعم dual tables
+2. ✅ `src/app/(dashboard)/add/page.tsx` - إرسال `_source: vendors`
+3. ✅ `src/components/forms/InvoiceForm.tsx` - schema + fields + submit
+4. ✅ `docs/fixes_log.md` - هذا السجل
+
+### Schema جدول Vendors (Airtable):
+```
+invoice_number       ← ⚠️ computed (لا ترسل قيمة)
+uploaded_by          ← اسم المستخدم (تلقائي)
+vendor_name          ← اسم المورد *
+amount               ← المبلغ *
+currency             ← العملة (افتراضي: SAR)
+invoice_date         ← تاريخ الفاتورة *
+due_date             ← تاريخ الاستحقاق *
+currency_preference  ← تفضيل العملة (اختياري)
+status               ← الحالة (افتراضي: "جديدة")
+notes                ← ملاحظات (اختياري)
+payment_URL          ← رابط الدفع (اختياري)
+email                ← بريد المورد (اختياري)
+invoice_file         ← Attachment (PDF من Google Drive)
+paid_at              ← تاريخ الدفع
+paid_by              ← من دفع
+cancelled_at         ← تاريخ الإلغاء
+cancelled_by         ← من ألغى
+```
+
+### النتيجة النهائية:
+- ✅ صفحة `/add` تحفظ في جدول `Vendors` فقط
+- ✅ لا يُرسل `invoice_number` (يُولّد تلقائياً من Airtable)
+- ✅ يُستخدم `payment_URL` بدلاً من `payment_link`
+- ✅ التواريخ تُعبّأ تلقائياً باليوم الحالي
+- ✅ رفع PDF يعمل ويُحفظ في `invoice_file` بصيغة Attachment
+- ✅ دعم كامل للحقول الجديدة (`email`, `currency_preference`)
+- ✅ backward compatibility للجدول القديم (Invoices)
+
+**الحالة:** ✅ مكتمل وجاهز للاختبار
 
 ---

@@ -1,13 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { UserRole } from '@/types/user';
-
-interface AuthUser {
-  username: string;
-  displayName: string;
-  role: UserRole;
-}
+import { UserRole, AuthUser } from '@/types/user';
 
 interface LoginResponse {
   success: boolean;
@@ -28,7 +22,19 @@ export function useAuth() {
 
     if (storedToken && storedUser) {
       setToken(storedToken);
-      setUser(JSON.parse(storedUser));
+
+      // Parse stored user
+      const parsedUser = JSON.parse(storedUser);
+
+      // Migration: If old format with displayName, convert to display_name
+      if ('displayName' in parsedUser && !('display_name' in parsedUser)) {
+        parsedUser.display_name = parsedUser.displayName;
+        delete parsedUser.displayName;
+        // Update localStorage with new format
+        localStorage.setItem('auth_user', JSON.stringify(parsedUser));
+      }
+
+      setUser(parsedUser);
     }
 
     setIsLoading(false);

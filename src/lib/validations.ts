@@ -15,14 +15,22 @@ export const updateUserSchema = z.object({
 });
 
 export const createInvoiceSchema = z.object({
-  invoice_number: z.string().default(''),
-  vendor_name: z.string().default(''),
+  // Core fields
+  vendor_name: z.string().min(1, 'اسم المورد مطلوب'),
   amount: z.number().positive('المبلغ يجب أن يكون أكبر من صفر'),
   currency: z.string().default('SAR'),
-  invoice_date: z.string().default(''),
-  due_date: z.string().default(''),
-  pdf_url: z.string().default(''),
-  payment_link: z.string().default(''),
-  notes: z.string().default(''),
-  source: z.string().default('يدوي'),
+  invoice_date: z.string().min(1, 'تاريخ الفاتورة مطلوب'),
+  due_date: z.string().min(1, 'تاريخ الاستحقاق مطلوب'),
+  notes: z.string().optional().default(''),
+  source: z.string().optional().default('يدوي'),
+
+  // Vendors table fields (optional)
+  payment_URL: z.string().optional(),
+  email: z.string().optional(),
+  currency_preference: z.string().optional(),
+  invoice_file: z.any().optional(),
+
+  // Invoices table fields (optional - for backward compatibility)
+  pdf_url: z.string().optional(),
+  payment_link: z.string().optional(),
 });

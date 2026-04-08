@@ -12,16 +12,17 @@ import { Upload, Sparkles } from 'lucide-react';
 // Validation schema
 const invoiceSchema = z.object({
   pdf_file: z.any().optional(),
-  invoice_number: z.string(),
-  vendor_name: z.string(),
+  // invoice_number is computed by Airtable - not needed
+  vendor_name: z.string().min(1, 'اسم المورد مطلوب'),
   amount: z.number().positive('المبلغ مطلوب ويجب أن يكون أكبر من صفر'),
-  currency: z.string(),
-  invoice_date: z.string(),
-  due_date: z.string(),
-  payment_link: z.string().refine((val) => val === '' || z.string().url().safeParse(val).success, {
-    message: 'رابط غير صحيح',
-  }),
-  notes: z.string(),
+  currency: z.string().optional(),
+  currency_preference: z.string().optional(),
+  invoice_date: z.string().min(1, 'تاريخ الفاتورة مطلوب'),
+  due_date: z.string().min(1, 'تاريخ الاستحقاق مطلوب'),
+  payment_URL: z.string().optional(),
+  payment_link: z.string().optional(),
+  email: z.string().optional(),
+  notes: z.string().optional(),
 });
 
 type InvoiceFormData = z.infer<typeof invoiceSchema>;
@@ -37,6 +38,9 @@ export function InvoiceForm({ onSubmit, isSubmitting = false }: InvoiceFormProps
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
 
+  // Get today's date in YYYY-MM-DD format
+  const today = new Date().toISOString().split('T')[0];
+
   const {
     register,
     handleSubmit,
@@ -45,22 +49,48 @@ export function InvoiceForm({ onSubmit, isSubmitting = false }: InvoiceFormProps
   } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
-      invoice_number: '',
       vendor_name: '',
       currency: 'SAR',
-      invoice_date: '',
-      due_date: '',
-      payment_link: '',
+      invoice_date: today,
+      due_date: today,
+      payment_URL: '',
+      email: '',
       notes: '',
     },
   });
 
-  // Handle PDF file upload
+  // Handle PDF file upload - convert to base64 and send with invoice data
   const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setPdfFile(file);
+    setUploadingPdf(true);
+
+    try {
+      // Convert file to base64 for Airtable attachment
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        // Set the base64 data with filename
+        setPdfUrl(JSON.stringify({
+          filename: file.name,
+          data: base64String
+        }));
+        setUploadingPdf(false);
+      };
+      reader.onerror = () => {
+        throw new Error('فشل قراءة الملف');
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error reading PDF:', error);
+      alert(error instanceof Error ? error.message : 'فشل قراءة الملف. يمكنك المتابعة بدون PDF.');
+      setPdfFile(null);
+      setUploadingPdf(false);
+    }
+
+    /* DISABLED: Google Drive upload - uncomment when credentials are fixed
     setUploadingPdf(true);
 
     try {
@@ -94,6 +124,7 @@ export function InvoiceForm({ onSubmit, isSubmitting = false }: InvoiceFormProps
     } finally {
       setUploadingPdf(false);
     }
+    */
   };
 
   // Handle AI analysis
@@ -119,13 +150,14 @@ export function InvoiceForm({ onSubmit, isSubmitting = false }: InvoiceFormProps
 
       const data = await response.json();
 
-      // Fill form with AI results
-      if (data.invoice_number) setValue('invoice_number', data.invoice_number);
+      // Fill form with AI results (invoice_number is auto-generated, skip it)
       if (data.vendor_name) setValue('vendor_name', data.vendor_name);
       if (data.amount) setValue('amount', parseFloat(data.amount));
       if (data.currency) setValue('currency', data.currency);
       if (data.invoice_date) setValue('invoice_date', data.invoice_date);
       if (data.due_date) setValue('due_date', data.due_date);
+      if (data.email) setValue('email', data.email);
+      if (data.payment_URL) setValue('payment_URL', data.payment_URL);
     } catch (error) {
       console.error('Error analyzing PDF:', error);
       alert('فشل التحليل الذكي. حاول مرة أخرى.');
@@ -135,9 +167,30 @@ export function InvoiceForm({ onSubmit, isSubmitting = false }: InvoiceFormProps
   };
 
   const onFormSubmit = async (data: InvoiceFormData) => {
+    let pdfAttachment = undefined;
+
+    // If pdfUrl contains base64 data, prepare it for Airtable
+    if (pdfUrl) {
+      try {
+        const pdfData = JSON.parse(pdfUrl);
+        if (pdfData.filename && pdfData.data) {
+          // Send base64 data - backend will convert to Airtable attachment
+          pdfAttachment = {
+            filename: pdfData.filename,
+            base64: pdfData.data
+          };
+        }
+      } catch {
+        // If not JSON, might be a regular URL
+        pdfAttachment = { url: pdfUrl };
+      }
+    }
+
     const formData = {
       ...data,
-      pdf_url: pdfUrl || '',
+      // For Vendors table, use invoice_file (Airtable Attachment format)
+      invoice_file: pdfAttachment,
+      pdf_url: pdfUrl || '', // Keep for backward compatibility
     };
     await onSubmit(formData as any);
   };
@@ -211,17 +264,18 @@ export function InvoiceForm({ onSubmit, isSubmitting = false }: InvoiceFormProps
       {/* Form Fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Input
-          label="رقم الفاتورة (اختياري)"
-          {...register('invoice_number')}
-          error={errors.invoice_number?.message}
-          placeholder="مثال: INV-2026-001"
-        />
-
-        <Input
-          label="اسم المورد (اختياري)"
+          label="اسم المورد *"
           {...register('vendor_name')}
           error={errors.vendor_name?.message}
           placeholder="مثال: شركة التوريدات"
+        />
+
+        <Input
+          label="البريد الإلكتروني (اختياري)"
+          type="email"
+          {...register('email')}
+          error={errors.email?.message}
+          placeholder="vendor@example.com"
         />
 
         <Input
@@ -241,14 +295,14 @@ export function InvoiceForm({ onSubmit, isSubmitting = false }: InvoiceFormProps
         />
 
         <Input
-          label="تاريخ الفاتورة (اختياري)"
+          label="تاريخ الفاتورة *"
           type="date"
           {...register('invoice_date')}
           error={errors.invoice_date?.message}
         />
 
         <Input
-          label="تاريخ الاستحقاق (اختياري)"
+          label="تاريخ الاستحقاق *"
           type="date"
           {...register('due_date')}
           error={errors.due_date?.message}
@@ -258,8 +312,8 @@ export function InvoiceForm({ onSubmit, isSubmitting = false }: InvoiceFormProps
       <Input
         label="رابط الدفع (اختياري)"
         type="url"
-        {...register('payment_link')}
-        error={errors.payment_link?.message}
+        {...register('payment_URL')}
+        error={errors.payment_URL?.message}
         placeholder="https://example.com/pay/..."
       />
 

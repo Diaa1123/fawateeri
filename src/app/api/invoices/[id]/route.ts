@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRecord, updateRecord } from '@/lib/airtable';
+import { getRecord, updateRecord, updateInvoice, updateVendorInvoice } from '@/lib/airtable';
 import { Invoice } from '@/types/invoice';
 import { ApiResponse } from '@/types/api';
 
@@ -55,7 +55,7 @@ export async function PATCH(
 
     // 2. Parse body
     const body = await request.json();
-    const { status } = body;
+    const { status, _source } = body;
 
     // 3. Validate status
     if (!status) {
@@ -86,17 +86,21 @@ export async function PATCH(
     }
 
     // 6. If changing to "ملغاة", add cancelled_at and cancelled_by
-    // TODO: Add these fields to Airtable Invoices table:
-    //   - cancelled_at (Date field)
-    //   - cancelled_by (Single line text)
-    // if (status === 'ملغاة') {
-    //   updateFields.cancelled_at = new Date().toISOString().split('T')[0];
-    //   updateFields.cancelled_by = username || 'غير معروف';
-    // }
+    if (status === 'ملغاة') {
+      updateFields.cancelled_at = new Date().toISOString().split('T')[0];
+      updateFields.cancelled_by = username || 'غير معروف';
+    }
 
-    // 7. Update invoice in Airtable
+    // 7. Update invoice in the correct table based on _source
     const { id } = await params;
-    const updatedInvoice = await updateRecord<Invoice>('Invoices', id, updateFields);
+    let updatedInvoice: Invoice;
+
+    if (_source === 'vendors') {
+      updatedInvoice = await updateVendorInvoice(id, updateFields);
+    } else {
+      // Default to invoices table for backward compatibility
+      updatedInvoice = await updateInvoice(id, updateFields);
+    }
 
     return NextResponse.json<ApiResponse<Invoice>>({
       success: true,

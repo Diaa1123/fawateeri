@@ -37,12 +37,20 @@ export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProp
         },
         body: JSON.stringify({
           status: 'مدفوعة',
+          _source: invoice._source, // تحديد أي جدول Airtable
         }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'فشل تحديث الفاتورة');
+        const errorText = await response.text();
+        let errorMessage = 'فشل تحديث الفاتورة';
+        try {
+          const error = JSON.parse(errorText);
+          errorMessage = error.error || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       return response.json();
@@ -70,12 +78,20 @@ export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProp
         },
         body: JSON.stringify({
           status: 'ملغاة',
+          _source: invoice._source, // تحديد أي جدول Airtable
         }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'فشل تحديث الفاتورة');
+        const errorText = await response.text();
+        let errorMessage = 'فشل إلغاء الفاتورة';
+        try {
+          const error = JSON.parse(errorText);
+          errorMessage = error.error || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       return response.json();
@@ -109,8 +125,8 @@ export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProp
     <div className="bg-bg-card border border-border-default rounded-xl p-6 hover:border-border-accent transition-colors duration-150">
       {/* Tags Row */}
       <div className="flex items-center gap-2 mb-4">
-        {/* Source Badge */}
-        {invoice.source === 'إيميل' ? (
+        {/* Source Badge - based on _source field */}
+        {invoice._source === 'invoices' ? (
           <Badge variant="default">
             📧 Airtable
           </Badge>
@@ -207,7 +223,7 @@ export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProp
 
       {/* Payment Status Badge */}
       <div className="mb-4">
-        {invoice.payment_link ? (
+        {(invoice.payment_URL || invoice.payment_link) ? (
           <Badge variant="info" icon={LinkIcon}>
             يحتوي رابط دفع
           </Badge>
@@ -220,30 +236,39 @@ export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProp
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-4 border-t border-border-default">
-        {/* PDF Button */}
-        <button
-          onClick={() => setIsPdfViewerOpen(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-primary hover:bg-bg-secondary text-text-secondary text-sm transition-colors duration-150"
-        >
-          <FileText className="w-4 h-4" />
-          <span>عرض PDF</span>
-        </button>
-
-        {/* Payment Link */}
-        {invoice.payment_link && (
-          <Link
-            href={invoice.payment_link}
-            target="_blank"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-green hover:bg-green-600 text-white text-sm transition-colors duration-150"
+        {/* PDF Button - Only show if pdf_url or invoice_file exists */}
+        {(invoice.pdf_url || invoice.invoice_file) && (
+          <button
+            onClick={() => setIsPdfViewerOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-primary hover:bg-bg-secondary text-text-secondary text-sm transition-colors duration-150"
           >
-            <DollarSign className="w-4 h-4" />
-            <span>ادفع الآن</span>
-            <ExternalLink className="w-3 h-3" />
-          </Link>
+            <FileText className="w-4 h-4" />
+            <span>عرض PDF</span>
+          </button>
         )}
 
-        {/* Contact Vendor Button - Only for manual invoices */}
-        {invoice.source === 'يدوي' && (
+        {/* Payment Link - support both payment_URL and payment_link */}
+        {(() => {
+          const paymentUrl = invoice.payment_URL || invoice.payment_link;
+          // Only render if URL is valid (not empty and not just "https:" or "http:")
+          const isValidUrl = paymentUrl && paymentUrl.length > 8 && !paymentUrl.match(/^https?:\/?\/?$/);
+
+          return isValidUrl ? (
+            <a
+              href={paymentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-green hover:bg-green-600 text-white text-sm transition-colors duration-150"
+            >
+              <DollarSign className="w-4 h-4" />
+              <span>ادفع الآن</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          ) : null;
+        })()}
+
+        {/* Contact Vendor Button - Only for manual invoices (_source === 'vendors') */}
+        {invoice._source === 'vendors' && (
           <button
             onClick={handleContactVendor}
             disabled
@@ -310,7 +335,7 @@ export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProp
       <PDFViewer
         isOpen={isPdfViewerOpen}
         onClose={() => setIsPdfViewerOpen(false)}
-        pdfUrl={invoice.pdf_url}
+        pdfUrl={invoice.pdf_url || invoice.invoice_file || ''}
         title={`فاتورة ${invoice.vendor_name} - ${invoice.invoice_number}`}
       />
     </div>

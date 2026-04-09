@@ -165,6 +165,13 @@ export async function updateRecord<T>(
   try {
     const url = `${AIRTABLE_API_URL}/${AIRTABLE_BASE_ID}/${tableName}/${recordId}`;
 
+    console.log('🔧 Airtable PATCH Request:', {
+      url,
+      recordId,
+      fieldsCount: Object.keys(fields).length,
+      fields: JSON.stringify(fields, null, 2)
+    });
+
     const response = await fetch(url, {
       method: 'PATCH',
       headers: {
@@ -174,11 +181,15 @@ export async function updateRecord<T>(
       body: JSON.stringify({ fields }),
     });
 
+    console.log('📡 Airtable Response Status:', response.status, response.statusText);
+
     if (!response.ok) {
+      const errorData = await response.json();
+      console.error('❌ Airtable Error Response:', errorData);
+
       if (response.status === 404) {
         throw new Error('Record not found');
       }
-      const errorData = await response.json();
       throw new Error(`Airtable API error: ${errorData.error?.message || response.statusText}`);
     }
 
@@ -475,6 +486,9 @@ export async function updateInvoice(id: string, data: Partial<Invoice>): Promise
   // Remove internal fields before sending to Airtable
   const { _source, _tableId, invoice_number, ...fields } = data;
 
+  console.log('🔄 Updating Invoices table record:', id);
+  console.log('📝 Fields to update:', JSON.stringify(fields, null, 2));
+
   const result = await updateRecord<Invoice>(INVOICES_TABLE_ID, id, fields);
 
   return {
@@ -516,6 +530,9 @@ export async function updateVendorInvoice(id: string, data: Partial<Invoice>): P
   if (fields.paid_by) airtableFields['paid by'] = fields.paid_by;
   if (fields.cancelled_at) airtableFields['cancelled_at'] = fields.cancelled_at;
   if (fields.cancelled_by) airtableFields['cancelled by'] = fields.cancelled_by;
+
+  console.log('🔄 Updating Vendors table record:', id);
+  console.log('📝 Fields to update:', JSON.stringify(airtableFields, null, 2));
 
   const result = await updateRecord<Invoice>(VENDORS_TABLE_ID, id, airtableFields);
 

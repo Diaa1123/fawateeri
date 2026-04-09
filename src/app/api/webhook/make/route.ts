@@ -6,6 +6,10 @@ import { ApiResponse } from '@/types/api';
 
 const MAKE_WEBHOOK_SECRET = process.env.MAKE_WEBHOOK_SECRET;
 
+if (!MAKE_WEBHOOK_SECRET) {
+  throw new Error('MAKE_WEBHOOK_SECRET environment variable is required');
+}
+
 /**
  * POST /api/webhook/make - Receive invoices from Make.com automation
  *
@@ -17,7 +21,7 @@ export async function POST(request: Request) {
     // 1. Verify webhook secret from header
     const webhookSecret = request.headers.get('x-make-webhook-secret');
 
-    if (MAKE_WEBHOOK_SECRET && webhookSecret !== MAKE_WEBHOOK_SECRET) {
+    if (!webhookSecret || webhookSecret !== MAKE_WEBHOOK_SECRET) {
       return NextResponse.json<ApiResponse<null>>(
         { success: false, error: 'Unauthorized webhook request' },
         { status: 401 }
@@ -87,7 +91,6 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         // If AI fails, continue with original data
-        console.error('AI analysis failed:', error);
       }
     }
 
@@ -118,7 +121,6 @@ export async function POST(request: Request) {
       message: 'Invoice created successfully from Make.com',
     });
   } catch (error) {
-    console.error('Webhook error:', error);
     return NextResponse.json<ApiResponse<null>>(
       {
         success: false,

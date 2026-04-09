@@ -80,9 +80,12 @@ export async function POST(request: Request) {
 
     const { username, display_name, password, role: userRole } = validation.data;
 
+    // Sanitize username to prevent Airtable formula injection
+    const sanitizedUsername = username.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+
     // 4. Check if username already exists
     const existingUsers = await listRecords<User>('Users', {
-      filterByFormula: `{username} = '${username}'`,
+      filterByFormula: `{username} = '${sanitizedUsername}'`,
       maxRecords: 1,
     });
 
@@ -119,7 +122,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error('Error creating user:', error);
     return NextResponse.json<ApiResponse<null>>(
       {
         success: false,

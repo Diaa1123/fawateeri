@@ -1,6 +1,6 @@
 ---
 name: troubleshooting
-description: تشخيص وحل المشاكل الشائعة في مشاريع Next.js + Prisma + Supabase. يُستخدم تلقائياً عند ظهور أخطاء، توقف السيرفر، بطء الأداء، مشاكل قاعدة البيانات، أخطاء البناء (build)، مشاكل النشر (deployment)، أو أي خطأ في الـ terminal أو المتصفح. يشمل أيضاً مشاكل Moyasar, Aramex, Make.com, Git, وأخطاء TypeScript.
+description: تشخيص وحل المشاكل الشائعة في مشاريع Next.js + Airtable. يُستخدم تلقائياً عند ظهور أخطاء، توقف السيرفر، بطء الأداء، مشاكل Airtable API، أخطاء البناء (build)، مشاكل النشر (deployment)، أو أي خطأ في الـ terminal أو المتصفح. يشمل أيضاً مشاكل Google Drive, OpenAI API, Make.com, Git, وأخطاء TypeScript.
 ---
 
 # تشخيص وحل المشاكل — Troubleshooting
@@ -9,9 +9,9 @@ description: تشخيص وحل المشاكل الشائعة في مشاريع N
 - عند ظهور أي خطأ في terminal أو متصفح
 - عند توقف `npm run dev` أو بطء الجهاز
 - عند فشل `npm run build`
-- عند مشاكل قاعدة البيانات أو Prisma
+- عند مشاكل Airtable API أو Google Drive
 - عند مشاكل النشر على Vercel أو VPS
-- عند مشاكل الربط مع خدمات خارجية
+- عند مشاكل الربط مع خدمات خارجية (Make.com, OpenAI)
 
 ## القاعدة الذهبية للتشخيص
 
@@ -190,149 +190,176 @@ const HeavyComponent = dynamic(() => import("./HeavyComponent"));
 
 ---
 
-## 3. مشاكل Prisma
+## 3. مشاكل Airtable API
 
-### المشكلة: Prisma Client ما يتعرف على الحقول الجديدة
-
-```
-Unknown field 'newField' on model 'Product'
-```
-
-**الحل:**
-```bash
-# لازم تولّد الـ client بعد كل تعديل على schema
-npx prisma generate
-
-# لو عدّلت schema ← لازم migration كمان
-npx prisma migrate dev --name describe_what_changed
-```
-
-### المشكلة: Migration فاشلة
+### المشكلة: 401 Unauthorized
 
 ```
-Error: P3009 migrate found failed migrations
+Error: AIRTABLE_API_KEY is not set or invalid
 ```
 
 **الحل:**
 ```bash
-# الحل 1: أعد المحاولة
-npx prisma migrate dev
+# 1. تحقق من .env.local:
+AIRTABLE_API_KEY=patXXXXXXXXXXXXXX
+AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
 
-# الحل 2: لو في بيئة التطوير فقط — ارجع من الصفر
-npx prisma migrate reset
-# ⚠️ هذا يمسح كل البيانات! لا تسويه في production
+# 2. تأكد إن الـ API key من النوع الصحيح:
+# Airtable ← Account ← Generate API key
+# استخدم Personal Access Token (pat...)
 
-# الحل 3: صلّح يدوي
-npx prisma migrate resolve --rolled-back "migration_name"
+# 3. تحقق من الصلاحيات:
+# الـ token لازم يكون له read/write على الـ Base
 ```
 
-### المشكلة: كثرة اتصالات قاعدة البيانات في dev
+### المشكلة: 422 Unprocessable Entity
 
 ```
-Error: Too many connections / PrismaClientInitializationError
+Error: The formula contains an invalid field name
 ```
 
-**الحل — استخدم singleton:**
+**الحل:**
 ```typescript
-// src/server/db.ts
-import { PrismaClient } from "@prisma/client";
+// تحقق إن أسماء الحقول مطابقة تماماً للي في Airtable
+// Airtable case-sensitive: "invoice_number" ≠ "Invoice_Number"
 
-const globalForPrisma = globalThis as { prisma?: PrismaClient };
+// ✅ صح
+const response = await fetch(url, {
+  body: JSON.stringify({
+    fields: {
+      invoice_number: "INV-001",  // نفس الاسم في Airtable
+      vendor_name: "شركة التوريدات"
+    }
+  })
+});
+```
 
-export const db =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" 
-      ? ["warn", "error"] 
-      : ["error"],
-  });
+### المشكلة: Rate Limiting (429)
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = db;
+```
+Error: You have exceeded the rate limit
+```
+
+**الحل:**
+```typescript
+// Airtable limits: 5 requests/second
+// استخدم debouncing أو queue:
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+async function batchCreateInvoices(invoices: Invoice[]) {
+  for (const invoice of invoices) {
+    await createInvoice(invoice);
+    await sleep(200); // 5 requests/sec = 200ms بين كل طلب
+  }
 }
 ```
 
-### المشكلة: Prisma بطيء
+### المشكلة: استدعاءات كثيرة للـ API
 
-```bash
-# شوف الـ queries البطيئة
-# أضف في PrismaClient:
-new PrismaClient({
-  log: [{ level: "query", emit: "stdout" }],
+```typescript
+// ❌ بطيء — استدعاء لكل فاتورة
+for (const id of invoiceIds) {
+  const invoice = await getInvoice(id);
+}
+
+// ✅ سريع — استدعاء واحد مع filter
+const invoices = await getInvoices({
+  filterByFormula: `OR(${invoiceIds.map(id => `RECORD_ID()="${id}"`).join(',')})`
 });
 
-# الأسباب الشائعة:
-# 1. N+1 queries — استخدم include بدل queries متكررة
-# 2. ناقص index على حقل تفلتر عليه
-# 3. تجلب بيانات أكثر من اللازم — استخدم select
-```
-
-**مثال N+1:**
-```typescript
-// ❌ بطيء — query لكل منتج
-const orders = await db.order.findMany();
-for (const order of orders) {
-  const products = await db.product.findMany({
-    where: { orderId: order.id },
-  });
-}
-
-// ✅ سريع — query واحد
-const orders = await db.order.findMany({
-  include: { products: true },
+// ✅ أو استخدم TanStack Query للتخزين المؤقت:
+const { data } = useQuery({
+  queryKey: ['invoices'],
+  queryFn: getInvoices,
+  staleTime: 30000, // 30 ثانية
 });
 ```
 
 ---
 
-## 4. مشاكل Supabase
+## 4. مشاكل Google Drive API
 
-### المشكلة: Auth ما يشتغل
-
-```
-AuthApiError: Invalid login credentials
-```
-
-**تحقق من:**
-```bash
-# 1. المفاتيح صحيحة في .env.local
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-
-# 2. Email confirmations معطلة في التطوير
-# Supabase Dashboard ← Auth ← Settings ← 
-# أطفئ "Enable email confirmations" للتطوير
-
-# 3. Redirect URLs مضافة
-# Supabase Dashboard ← Auth ← URL Configuration
-# أضف: http://localhost:3000/**
-```
-
-### المشكلة: Storage — رفع الصور يفشل
+### المشكلة: رفع PDF يفشل
 
 ```
-StorageApiError: new row violates row-level security policy
+Error: invalid_grant
 ```
 
 **الحل:**
-```sql
--- في Supabase SQL Editor — أضف policy للرفع
-CREATE POLICY "Users can upload images"
-ON storage.objects FOR INSERT
-WITH CHECK (
-  bucket_id = 'products'
-  AND auth.role() = 'authenticated'
-);
+```bash
+# 1. تحقق من credentials:
+GOOGLE_SERVICE_ACCOUNT_EMAIL=xxx@xxx.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
 
--- وللقراءة العامة
-CREATE POLICY "Anyone can view images"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'products');
+# 2. Private key لازم يحتوي على \n حقيقية:
+# في .env.local استخدم:
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+
+# 3. تأكد إن Service Account عنده صلاحية:
+# Google Drive ← Folder ← Share ← أضف service account email
+```
+
+### المشكلة: Folder not found
+
+```
+Error: File not found (404)
+```
+
+**الحل:**
+```bash
+# الـ GOOGLE_DRIVE_FOLDER_ID غلط
+# اطلع الـ ID من رابط المجلد:
+# https://drive.google.com/drive/folders/[FOLDER_ID]
+
+# تأكد إن الـ folder مشارك مع service account
 ```
 
 ---
 
-## 5. مشاكل Node Modules والمكتبات
+## 5. مشاكل OpenAI API
+
+### المشكلة: تحليل الفاتورة يفشل
+
+```
+Error: Incorrect API key provided
+```
+
+**الحل:**
+```bash
+# تحقق من .env.local:
+OPENAI_API_KEY=sk-proj-...
+
+# تأكد إن الـ key من النوع الصحيح (project API key)
+# OpenAI Dashboard ← API Keys ← Create new key
+```
+
+### المشكلة: استهلاك كبير للـ tokens
+
+```typescript
+// ❌ يرسل كل محتوى PDF (قد يكون كبير جداً)
+const analysis = await openai.chat.completions.create({
+  messages: [{ role: "user", content: pdfFullText }]
+});
+
+// ✅ أرسل فقط الجزء المهم
+const extractedText = pdfFullText.slice(0, 4000); // أول 4000 حرف
+```
+
+### المشكلة: Response بطيء
+
+```typescript
+// استخدم streaming للاستجابة الأسرع:
+const stream = await openai.chat.completions.create({
+  model: "gpt-4o",
+  messages: [...],
+  stream: true,
+});
+```
+
+---
+
+## 6. مشاكل Node Modules والمكتبات
 
 ### المشكلة: مكتبات متضاربة
 
@@ -394,7 +421,7 @@ npm install xxx
 
 ---
 
-## 6. مشاكل Git
+## 7. مشاكل Git
 
 ### المشكلة: الـ Agent خرّب ملفات
 
@@ -445,83 +472,8 @@ git commit -m "remove env from tracking"
 
 ---
 
-## 7. مشاكل Moyasar
+## 8. مشاكل Make.com
 
-### المشكلة: الدفع يرجع خطأ
-
-```
-# تأكد إنك في الوضع الصحيح
-# تطوير: pk_test_ / sk_test_
-# إنتاج: pk_live_ / sk_live_
-
-# ⚠️ لا تخلط بينهم!
-```
-
-### المشكلة: المبلغ غلط
-
-```typescript
-// ⚠️ السبب الأكثر شيوعاً: نسيت تحويل الريالات للهللات
-// Moyasar يتعامل بالهللات
-
-// ❌ غلط — يخصم 1.5 ريال بدل 150
-amount: 150
-
-// ✅ صح — يخصم 150 ريال
-amount: 150 * 100  // = 15000 هللة
-```
-
-### المشكلة: Callback ما يرجع
-
-```typescript
-// تأكد إن callback_url صحيح ويشتغل
-// في التطوير: http://localhost:3000/api/payment/callback
-// في الإنتاج: https://banafsaj.com/api/payment/callback
-
-// ⚠️ Moyasar ما يقدر يوصل localhost
-// للتجربة المحلية استخدم ngrok:
-npx ngrok http 3000
-// واستخدم الرابط اللي يعطيك كـ callback
-```
-
----
-
-## 8. مشاكل Aramex
-
-### المشكلة: Error 400 عند إنشاء شحنة
-
-```typescript
-// السبب الأشهر: حقول عربية في الـ request
-// ❌ أرامكس ما يقبل
-City: "جدة"
-
-// ✅ استخدم إنجليزي
-City: "Jeddah"
-
-// السبب الثاني: حقول ناقصة
-// Aramex يطلب كل هذي:
-// - PersonName
-// - PhoneNumber1
-// - CellPhone (حتى لو نفس الرقم)
-// - Line1 (العنوان)
-// - City
-// - CountryCode
-```
-
-### المشكلة: Tracking ما يرجع بيانات
-
-```typescript
-// الشحنة تحتاج وقت تتسجل في نظام أرامكس
-// انتظر 30-60 دقيقة بعد إنشاء الشحنة
-// ثم حاول التتبع
-
-// لو بعد ساعة ما فيه بيانات:
-// تحقق إن رقم التتبع صحيح
-// تحقق إن الـ credentials صحيحة
-```
-
----
-
-## 9. مشاكل Make.com
 
 ### المشكلة: Webhook ما يوصل
 
@@ -559,7 +511,7 @@ export async function POST(req: Request) {
 
 ---
 
-## 10. مشاكل النشر (Vercel)
+## 9. مشاكل النشر (Vercel)
 
 ### المشكلة: Build يفشل على Vercel بس يشتغل محلي
 
@@ -582,17 +534,17 @@ export async function POST(req: Request) {
 }
 ```
 
-### المشكلة: الموقع يشتغل بس قاعدة البيانات لا
+### المشكلة: الموقع يشتغل بس Airtable لا
 
 ```bash
-# تأكد إن DATABASE_URL في Vercel env vars
-# تأكد إن قاعدة البيانات تقبل اتصالات خارجية
-# Supabase: يقبل تلقائياً
-# VPS: تأكد إن PostgreSQL يسمع على 0.0.0.0
+# تأكد إن environment variables في Vercel:
+# AIRTABLE_API_KEY=pat...
+# AIRTABLE_BASE_ID=app...
+# OPENAI_API_KEY=sk-proj-...
+# GOOGLE_SERVICE_ACCOUNT_EMAIL=...
+# GOOGLE_PRIVATE_KEY=...
 
-# لو تستخدم connection pooling (مهم للإنتاج):
-# استخدم Supabase pooler URL:
-# DATABASE_URL=postgres://...pooler.supabase.com:6543/...?pgbouncer=true
+# تحقق إن GOOGLE_PRIVATE_KEY يحتوي على \n حقيقية
 ```
 
 ### المشكلة: صفحات 404 بعد النشر
@@ -606,7 +558,7 @@ export async function POST(req: Request) {
 
 ---
 
-## 11. مشاكل TypeScript
+## 10. مشاكل TypeScript
 
 ### المشكلة: أخطاء كثيرة بعد تحديث المكتبات
 
@@ -645,7 +597,7 @@ export default async function Page({
 
 ---
 
-## 12. الحل النووي — لما كل شيء يفشل
+## 11. الحل النووي — لما كل شيء يفشل
 
 ```bash
 # 1. أوقف كل شيء
@@ -663,11 +615,8 @@ npm cache clean --force
 # 5. أعد التثبيت
 npm install
 
-# 6. أعد توليد Prisma
-npx prisma generate
-
-# 7. شغّل
-npm run dev --turbopack
+# 6. شغّل
+npm run dev
 ```
 
 **لو بعد كل هذا ما اشتغل:**
@@ -682,9 +631,10 @@ npm run build 2>&1 | head -50
 ---
 
 ## الممنوعات
-- ❌ لا تحذف قاعدة بيانات production — migrate reset فقط في dev
+- ❌ لا تحذف بيانات Airtable production — اختبر على base منفصل
 - ❌ لا تستخدم `--force` بدون ما تفهم ايش يسوي
 - ❌ لا ترفع .env على Git — حتى لو test keys
 - ❌ لا تتجاهل أخطاء build — لو فشل البناء لا تنشر
 - ❌ لا تحدّث كل المكتبات مرة وحدة — حدّث وحدة وحدة واختبر
 - ❌ لا تقتل عمليات بـ kill -9 إلا كحل أخير
+- ❌ لا تشغّل npm run build بدون داعي — استخدم npm run dev للتطوير

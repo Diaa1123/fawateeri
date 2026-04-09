@@ -85,7 +85,7 @@ export async function PATCH(
 
     // 4. Update user in Airtable
     const { id } = await params;
-    const updateData: any = { ...validation.data };
+    const updateData: Partial<User> = { ...validation.data };
 
     // If password is provided, hash it and save plain version
     if (updateData.password && updateData.password.trim() !== '') {

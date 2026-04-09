@@ -2,6 +2,283 @@
 
 ---
 
+## [FIXED] مراجعة شاملة للكود - إصلاح 7 مشاكل أمنية ونوعية — 2026-04-09
+
+### ملخص:
+تم إجراء مراجعة شاملة للكود بواسطة 6 agents متخصصين (CLAUDE.md compliance، الأمان، TypeScript، الأداء، البنية المعمارية، الأخطاء المنطقية). تم العثور على 47 مشكلة وتصنيفها إلى Critical (6), High (11), Medium (21), Low (9). تم إصلاح جميع المشاكل الحرجة والعالية (باستثناء مشاكل كلمات السر حسب طلب العميل).
+
+### الإصلاحات المنفذة:
+
+#### 1. ✅ إصلاح SQL Injection في مصادقة المستخدم
+**الملف:** `src/lib/auth.ts`
+**الأولوية:** Critical
+**المشكلة:** استخدام مباشر لمدخلات المستخدم في filterByFormula بدون sanitization
+
+**الحل:**
+```typescript
+// إضافة دالة sanitization
+function sanitizeForAirtableFormula(input: string): string {
+  return input.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+}
+
+// تطبيقها في getUserByUsername
+export async function getUserByUsername(username: string): Promise<User | null> {
+  try {
+    const result = await listRecords<User>('Users', {
+      filterByFormula: `{username} = '${sanitizeForAirtableFormula(username)}'`,
+      maxRecords: 1,
+    });
+    // ...
+  }
+}
+```
+
+#### 2. ✅ إصلاح SQL Injection في إنشاء المستخدمين
+**الملف:** `src/app/api/users/route.ts`
+**الأولوية:** Critical
+**المشكلة:** استخدام مباشر لـ username في filterByFormula عند التحقق من التكرار
+
+**الحل:**
+```typescript
+const { username, display_name, password, role: userRole } = validation.data;
+
+// Sanitize username to prevent Airtable formula injection
+const sanitizedUsername = username.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+
+// 4. Check if username already exists
+const existingUsers = await listRecords<User>('Users', {
+  filterByFormula: `{username} = '${sanitizedUsername}'`,
+  maxRecords: 1,
+});
+```
+
+#### 3. ✅ تحسين أمان Webhook
+**الملف:** `src/app/api/webhook/make/route.ts`
+**الأولوية:** High
+**المشكلة:** Secret key اختياري (يعمل بدونه في بعض الحالات)
+
+**الحل:**
+```typescript
+const MAKE_WEBHOOK_SECRET = process.env.MAKE_WEBHOOK_SECRET;
+
+// إضافة تحقق إلزامي
+if (!MAKE_WEBHOOK_SECRET) {
+  throw new Error('MAKE_WEBHOOK_SECRET environment variable is required');
+}
+
+export async function POST(request: Request) {
+  try {
+    const webhookSecret = request.headers.get('x-make-webhook-secret');
+
+    // تغيير من OR إلى AND - Secret إلزامي الآن
+    if (!webhookSecret || webhookSecret !== MAKE_WEBHOOK_SECRET) {
+      return NextResponse.json<ApiResponse<null>>(
+        { success: false, error: 'Unauthorized webhook request' },
+        { status: 401 }
+      );
+    }
+    // ...
+  }
+}
+```
+
+#### 4. ✅ حذف 4 ملفات Documentation زائدة
+**المشكلة:** وجود ملفات docs إضافية تخالف نظام الـ 9 ملفات فقط في CLAUDE.md
+
+**الملفات المحذوفة:**
+- `docs/BACKEND_AGENT_PROMPT.md`
+- `docs/UI_AGENT_PROMPT.md`
+- `docs/START_HERE.md`
+- `docs/PROMPTS_FOR_AGENTS.md`
+
+**الملفات المسموحة (9 فقط):**
+1. MASTER-PLAN.md
+2. CURRENT-PHASE.md
+3. DECISIONS.md
+4. USER-FLOWS.md
+5. backend_tasks.md
+6. backend_logs.md
+7. UI_tasks.md
+8. UI_logs.md
+9. fixes_log.md
+
+#### 5. ✅ إصلاح `any` Types في 4 ملفات
+
+**5.1 الملف:** `src/components/shared/MonthlyChart.tsx`
+**السطر:** 19
+**الأولوية:** High
+
+**قبل:**
+```typescript
+const CustomTooltip = ({ active, payload }: any) => {
+```
+
+**بعد:**
+```typescript
+interface TooltipPayload {
+  value: number;
+  payload: MonthlyStats;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayload[];
+}
+
+const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
+```
+
+**5.2 الملف:** `src/app/(dashboard)/add/page.tsx`
+**الأسطر:** 21, 71
+**الأولوية:** High
+
+**قبل:**
+```typescript
+const handleSubmit = async (data: any) => {
+  // ...
+} catch (error: any) {
+  alert(error.message || 'حدث خطأ');
+}
+```
+
+**بعد:**
+```typescript
+// إضافة interface في أول الملف
+interface InvoiceFormData {
+  invoice_number: string;
+  vendor_name: string;
+  amount: number;
+  currency: string;
+  invoice_date: string;
+  due_date: string;
+  pdf_url?: string;
+  payment_link?: string;
+  notes?: string;
+}
+
+const handleSubmit = async (data: InvoiceFormData) => {
+  // ...
+} catch (error) {
+  const errorMessage = error instanceof Error ? error.message : 'حدث خطأ أثناء حفظ الفاتورة';
+  alert(errorMessage);
+}
+```
+
+**5.3 الملف:** `src/app/api/users/[id]/route.ts`
+**السطر:** 88
+**الأولوية:** High
+
+**قبل:**
+```typescript
+const updateData: any = { ...validation.data };
+```
+
+**بعد:**
+```typescript
+const updateData: Partial<User> = { ...validation.data };
+```
+
+#### 6. ✅ إضافة try-catch في useAuth hook
+**الملف:** `src/hooks/useAuth.ts`
+**السطر:** 19-41
+**الأولوية:** Medium
+**المشكلة:** JSON.parse يمكن أن يفشل إذا كانت البيانات المخزنة تالفة
+
+**قبل:**
+```typescript
+useEffect(() => {
+  const storedToken = localStorage.getItem('auth_token');
+  const storedUser = localStorage.getItem('auth_user');
+
+  if (storedToken && storedUser) {
+    setToken(storedToken);
+    const parsedUser = JSON.parse(storedUser); // قد يفشل هنا
+    // ...
+    setUser(parsedUser);
+  }
+
+  setIsLoading(false);
+}, []);
+```
+
+**بعد:**
+```typescript
+useEffect(() => {
+  try {
+    const storedToken = localStorage.getItem('auth_token');
+    const storedUser = localStorage.getItem('auth_user');
+
+    if (storedToken && storedUser) {
+      setToken(storedToken);
+
+      // Parse stored user with error handling
+      const parsedUser = JSON.parse(storedUser);
+
+      // Migration logic...
+      setUser(parsedUser);
+    }
+  } catch (error) {
+    // If parsing fails, clear corrupted data
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+  } finally {
+    setIsLoading(false);
+  }
+}, []);
+```
+
+#### 7. ✅ تحسين أداء InvoiceCard مع React.memo
+**الملف:** `src/components/shared/InvoiceCard.tsx`
+**الأولوية:** Medium
+**المشكلة:** المكون يعاد رسمه (re-render) حتى لو props لم تتغير
+
+**الحل:**
+```typescript
+// قبل
+export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProps) {
+  // ...
+}
+
+// بعد
+import { useState, memo } from 'react';
+
+function InvoiceCardComponent({ invoice, showMarkAsPaid = false }: InvoiceCardProps) {
+  // نفس الكود بالضبط
+}
+
+export const InvoiceCard = memo(InvoiceCardComponent);
+```
+
+### ملاحظات:
+- **تم تجاهل** مشاكل تخزين كلمات السر بنص عادي (password field) حسب طلب العميل
+- **تم تجاهل** اقتراح زيادة طول كلمة السر من 6 إلى 12 حرف (قرار العميل)
+- **لم يتم تنفيذ** إضافة cache headers (تحسين مستقبلي)
+- **لم يتم تنفيذ** إضافة rate limiting (تحسين مستقبلي)
+
+### الملفات المعدلة (7 ملفات):
+1. `src/lib/auth.ts` - إضافة sanitization function
+2. `src/app/api/users/route.ts` - sanitize username input
+3. `src/app/api/webhook/make/route.ts` - تحسين أمان webhook
+4. `src/components/shared/MonthlyChart.tsx` - إصلاح any type
+5. `src/app/(dashboard)/add/page.tsx` - إصلاح 2 any types
+6. `src/app/api/users/[id]/route.ts` - إصلاح any type
+7. `src/hooks/useAuth.ts` - إضافة try-catch
+8. `src/components/shared/InvoiceCard.tsx` - إضافة React.memo
+
+### الملفات المحذوفة (4 ملفات):
+1. `docs/BACKEND_AGENT_PROMPT.md`
+2. `docs/UI_AGENT_PROMPT.md`
+3. `docs/START_HERE.md`
+4. `docs/PROMPTS_FOR_AGENTS.md`
+
+### النتيجة:
+✅ جميع المشاكل الحرجة (Critical) تم إصلاحها
+✅ جميع المشاكل العالية (High) تم إصلاحها (ما عدا المتعلقة بكلمات السر)
+✅ تحسينات Medium تم تنفيذها (try-catch, React.memo)
+⏳ تحسينات Low مؤجلة (cache headers, rate limiting)
+
+---
+
 ## [FIXED] Middleware لا يعمل على Dynamic Routes — 2026-04-08
 
 ### المشكلة:

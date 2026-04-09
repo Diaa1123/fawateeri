@@ -14,9 +14,19 @@ interface MonthlyChartProps {
   data: MonthlyStats[];
 }
 
+interface TooltipPayload {
+  value: number;
+  payload: MonthlyStats;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayload[];
+}
+
 export function MonthlyChart({ data }: MonthlyChartProps) {
   // Custom tooltip
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-bg-card border border-border-default rounded-lg p-3 shadow-lg">

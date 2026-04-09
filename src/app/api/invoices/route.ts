@@ -47,11 +47,6 @@ export async function GET(request: Request) {
       getVendorInvoices(filterByFormula),
     ]);
 
-    console.log('📊 Email invoices count:', emailInvoicesResult.records.length);
-    console.log('📊 Vendor invoices count:', vendorsResult.records.length);
-    console.log('📊 Email sample:', emailInvoicesResult.records[0]);
-    console.log('📊 Vendor sample:', vendorsResult.records[0]);
-
     // Merge both sources (both are already mapped with _source field)
     const allRecords = [...emailInvoicesResult.records, ...vendorsResult.records];
 
@@ -76,7 +71,6 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    console.error('Error fetching invoices:', error);
     return NextResponse.json<ApiResponse<null>>(
       {
         success: false,
@@ -106,18 +100,12 @@ export async function POST(request: Request) {
 
     // Parse body
     const body = await request.json();
-    console.log('📨 Received body:', JSON.stringify(body, null, 2));
 
     // Extract _source and remove internal fields
     const { _source, invoice_number, ...invoiceData } = body;
-    console.log('📋 Invoice data (after removing _source, invoice_number):', JSON.stringify(invoiceData, null, 2));
 
     // Validate with Zod
     const validation = createInvoiceSchema.safeParse(invoiceData);
-    console.log('✅ Validation result:', validation.success ? 'PASSED' : 'FAILED');
-    if (!validation.success) {
-      console.log('❌ Validation errors:', JSON.stringify(validation.error.issues, null, 2));
-    }
 
     if (!validation.success) {
       const errorMessage = validation.error.issues[0]?.message || 'بيانات غير صحيحة';
@@ -172,8 +160,6 @@ export async function POST(request: Request) {
     };
 
     // Create invoice in correct table based on _source
-    console.log('📤 Sending to Airtable (_source:', _source, '):', JSON.stringify(invoicePayload, null, 2));
-
     let newInvoice: Invoice;
     if (_source === 'vendors') {
       // Create in Vendors table (manual invoices from /add page)
@@ -187,8 +173,6 @@ export async function POST(request: Request) {
       });
     }
 
-    console.log('✅ Invoice created successfully:', newInvoice.id);
-
     return NextResponse.json<ApiResponse<Invoice>>(
       {
         success: true,
@@ -197,7 +181,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error('Error creating invoice:', error);
     return NextResponse.json<ApiResponse<null>>(
       {
         success: false,

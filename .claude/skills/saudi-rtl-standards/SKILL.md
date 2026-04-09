@@ -99,26 +99,28 @@ line-height: 1.8;    /* أعلى من الإنجليزي (1.5) */
 
 ## 3. تنسيق الأرقام والعملات
 
+⚠️ **تحديث أبريل 2026:** تم تغيير معيار عرض الأرقام والتواريخ إلى الإنجليزية بناءً على قرار العميل.
+
 ### الأسعار — ريال سعودي
 ```typescript
 const formatPrice = (price: number): string =>
-  new Intl.NumberFormat("ar-SA", {
+  new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "SAR",
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(price);
+  }).format(price).replace('SAR', 'SAR'); // يعرض: 1,200.00 SAR
 
-// النتيجة: ١٢٠ ر.س
-// النتيجة: ١٬٢٥٠٫٥٠ ر.س
+// النتيجة الجديدة: 120 SAR
+// النتيجة الجديدة: 1,250.50 SAR
 ```
 
 ### الأرقام العامة
 ```typescript
 const formatNumber = (num: number): string =>
-  new Intl.NumberFormat("ar-SA").format(num);
+  new Intl.NumberFormat("en-US").format(num);
 
-// النتيجة: ١٬٥٠٠
+// النتيجة: 1,500
 ```
 
 ### أرقام الهاتف السعودي
@@ -141,19 +143,21 @@ const saudiPhoneRegex = /^(05|9665)\d{8}$/;
 ## 4. التواريخ
 
 ### التنسيق الافتراضي
+⚠️ **تحديث:** التواريخ تعرض بالإنجليزية حسب قرار العميل.
+
 ```typescript
 const formatDate = (date: Date): string =>
-  new Intl.DateTimeFormat("ar-SA", {
+  new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
   }).format(date);
 
-// النتيجة: ٣ أبريل ٢٠٢٦
+// النتيجة: April 3, 2026
 
 // مع الوقت
 const formatDateTime = (date: Date): string =>
-  new Intl.DateTimeFormat("ar-SA", {
+  new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -232,7 +236,7 @@ const saudiCities = [
 ## 6. الممنوعات
 - ❌ لا تستخدم `text-left` أو `text-right` — استخدم `text-start` / `text-end`
 - ❌ لا تستخدم `ml/mr/pl/pr` — استخدم `ms/me/ps/pe`
-- ❌ لا تعرض أرقام إنجليزية للمستخدم (1,200 ر.س) — استخدم Intl
+- ⚠️ ⚠️ الأرقام والتواريخ: استخدم en-US حسب قرار العميل (1,200.00 SAR)
 - ❌ لا تستخدم خطوط غير داعمة للعربي
-- ❌ لا تكتب رسائل النظام بالإنجليزي
+- ❌ لا تكتب رسائل النظام بالإنجليزي (فقط الرسائل للمستخدم تكون عربي)
 - ❌ لا تتجاهل line-height المناسب للعربي

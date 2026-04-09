@@ -7,6 +7,18 @@ import { useAuth } from '@/hooks/useAuth';
 import { CheckCircle, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
+interface InvoiceFormData {
+  invoice_number: string;
+  vendor_name: string;
+  amount: number;
+  currency: string;
+  invoice_date: string;
+  due_date: string;
+  pdf_url?: string;
+  payment_link?: string;
+  notes?: string;
+}
+
 export default function AddInvoicePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -18,7 +30,7 @@ export default function AddInvoicePage() {
     router.push('/login');
   };
 
-  const handleSubmit = async (data: any) => {
+  const handleSubmit = async (data: InvoiceFormData) => {
     setIsSubmitting(true);
 
     try {
@@ -33,7 +45,6 @@ export default function AddInvoicePage() {
         status: 'جديدة',
       };
 
-      console.log('Sending invoice data:', payload);
 
       const response = await fetch('/api/invoices', {
         method: 'POST',
@@ -69,9 +80,9 @@ export default function AddInvoicePage() {
           router.push('/invoices');
         }
       }, 2000);
-    } catch (error: any) {
-      console.error('Error saving invoice:', error);
-      alert(error.message || 'حدث خطأ أثناء حفظ الفاتورة');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'حدث خطأ أثناء حفظ الفاتورة';
+      alert(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

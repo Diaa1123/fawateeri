@@ -165,13 +165,6 @@ export async function updateRecord<T>(
   try {
     const url = `${AIRTABLE_API_URL}/${AIRTABLE_BASE_ID}/${tableName}/${recordId}`;
 
-    console.log('🔧 Airtable PATCH Request:', {
-      url,
-      recordId,
-      fieldsCount: Object.keys(fields).length,
-      fields: JSON.stringify(fields, null, 2)
-    });
-
     const response = await fetch(url, {
       method: 'PATCH',
       headers: {
@@ -181,11 +174,8 @@ export async function updateRecord<T>(
       body: JSON.stringify({ fields }),
     });
 
-    console.log('📡 Airtable Response Status:', response.status, response.statusText);
-
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('❌ Airtable Error Response:', errorData);
 
       if (response.status === 404) {
         throw new Error('Record not found');
@@ -244,14 +234,41 @@ const INVOICES_TABLE_ID = process.env.AIRTABLE_INVOICES_TABLE;
 const VENDORS_TABLE_ID = process.env.AIRTABLE_VENDORS_TABLE_ID;
 
 if (!INVOICES_TABLE_ID || !VENDORS_TABLE_ID) {
-  console.warn('Warning: AIRTABLE_INVOICES_TABLE or AIRTABLE_VENDORS_TABLE_ID not set');
+  if (process.env.NODE_ENV === 'development') {
+    console.warn('Warning: AIRTABLE_INVOICES_TABLE or AIRTABLE_VENDORS_TABLE_ID not set');
+  }
+}
+
+/**
+ * Raw Airtable record type for Invoices table
+ */
+interface RawAirtableInvoice {
+  id: string;
+  invoice_number?: string;
+  vendor_name?: string;
+  amount?: number;
+  currency?: string;
+  invoice_date?: string;
+  due_date?: string;
+  status?: string;
+  notes?: string;
+  pdf_url?: string;
+  payment_link?: string;
+  uploaded_by?: string;
+  uploaded_at?: string;
+  paid_at?: string;
+  paid_by?: string;
+  cancelled_at?: string;
+  cancelled_by?: string;
+  source?: string;
+  month_year?: string;
 }
 
 /**
  * Map Airtable field names (with spaces) to code field names (with underscores)
  * Used when reading from Invoices table (email/webhook)
  */
-function mapInvoiceFieldsFromAirtable(airtableRecord: any): Invoice {
+function mapInvoiceFieldsFromAirtable(airtableRecord: RawAirtableInvoice): Invoice {
   return {
     id: airtableRecord.id,
     invoice_number: airtableRecord['invoice_number'],
@@ -279,10 +296,33 @@ function mapInvoiceFieldsFromAirtable(airtableRecord: any): Invoice {
 }
 
 /**
+ * Raw Airtable record type for Vendors table
+ */
+interface RawAirtableVendor {
+  id: string;
+  'vendor name'?: string;
+  amount?: number;
+  currency?: string;
+  'invoice date'?: string;
+  'due date'?: string;
+  status?: string;
+  notes?: string;
+  'payment URL'?: string;
+  'uploaded by'?: string;
+  email?: string;
+  currency_preference?: string;
+  'invoice file'?: unknown;
+  'paid at'?: string;
+  'paid by'?: string;
+  cancelled_at?: string;
+  'cancelled by'?: string;
+}
+
+/**
  * Map Airtable field names (with spaces) to code field names (with underscores)
  * Used when reading from Vendors table
  */
-function mapVendorFieldsFromAirtable(airtableRecord: any): Invoice {
+function mapVendorFieldsFromAirtable(airtableRecord: RawAirtableVendor): Invoice {
   return {
     id: airtableRecord.id,
     vendor_name: airtableRecord['vendor name'],
@@ -320,17 +360,8 @@ export async function getEmailInvoices(filterByFormula?: string): Promise<Pagina
     maxRecords: 50,
   });
 
-  if (result.records.length > 0) {
-    console.log('🔍 Raw Invoices table record keys:', result.records[0] ? Object.keys(result.records[0]) : []);
-    console.log('🔍 Raw Invoices table record (first):', result.records[0]);
-  }
-
   // Map Airtable field names to code field names
-  const mappedRecords = result.records.map((record: any) => mapInvoiceFieldsFromAirtable(record));
-
-  if (mappedRecords.length > 0) {
-    console.log('🔍 Mapped Invoices record (first):', mappedRecords[0]);
-  }
+  const mappedRecords = result.records.map((record) => mapInvoiceFieldsFromAirtable(record as RawAirtableInvoice));
 
   return {
     records: mappedRecords,
@@ -352,7 +383,7 @@ export async function getVendorInvoices(filterByFormula?: string): Promise<Pagin
   });
 
   // Map Airtable field names to code field names
-  const mappedRecords = result.records.map((record: any) => mapVendorFieldsFromAirtable(record));
+  const mappedRecords = result.records.map((record) => mapVendorFieldsFromAirtable(record as RawAirtableVendor));
 
   return {
     records: mappedRecords,
@@ -432,18 +463,14 @@ export async function createVendorInvoice(data: Partial<Invoice>): Promise<Invoi
 
   // Remove internal fields before sending to Airtable
   const { _source, _tableId, invoice_number, ...fields } = data;
-  console.log('🔧 createVendorInvoice - fields after destructuring:', JSON.stringify(fields, null, 2));
 
   // Map field names to Airtable column names (Airtable uses spaces, not underscores)
-  const airtableFields: Record<string, any> = {};
+  const airtableFields: Record<string, unknown> = {};
 
   // Required fields (always send)
   if (fields.vendor_name !== undefined) airtableFields['vendor name'] = fields.vendor_name;
   if (fields.amount !== undefined) {
-    console.log('💰 Amount field:', fields.amount, 'Type:', typeof fields.amount);
     airtableFields['amount'] = fields.amount;
-  } else {
-    console.log('⚠️ Amount is undefined!');
   }
 
   // Send these fields even if empty string (Airtable expects them)
@@ -464,11 +491,7 @@ export async function createVendorInvoice(data: Partial<Invoice>): Promise<Invoi
   if (fields.cancelled_at) airtableFields['cancelled_at'] = fields.cancelled_at;
   if (fields.cancelled_by) airtableFields['cancelled by'] = fields.cancelled_by;
 
-  console.log('📮 Final Airtable fields being sent:', JSON.stringify(airtableFields, null, 2));
-
   const result = await createRecord<Invoice>(VENDORS_TABLE_ID, airtableFields);
-
-  console.log('✅ Airtable record created successfully:', result.id);
 
   return {
     ...result,
@@ -485,9 +508,6 @@ export async function updateInvoice(id: string, data: Partial<Invoice>): Promise
 
   // Remove internal fields before sending to Airtable
   const { _source, _tableId, invoice_number, ...fields } = data;
-
-  console.log('🔄 Updating Invoices table record:', id);
-  console.log('📝 Fields to update:', JSON.stringify(fields, null, 2));
 
   const result = await updateRecord<Invoice>(INVOICES_TABLE_ID, id, fields);
 
@@ -509,7 +529,7 @@ export async function updateVendorInvoice(id: string, data: Partial<Invoice>): P
   const { _source, _tableId, invoice_number, ...fields } = data;
 
   // Map field names to Airtable column names (Airtable uses spaces, not underscores)
-  const airtableFields: Record<string, any> = {};
+  const airtableFields: Record<string, unknown> = {};
 
   // Send fields even if empty string (Airtable expects them)
   if (fields.vendor_name !== undefined) airtableFields['vendor name'] = fields.vendor_name;
@@ -530,9 +550,6 @@ export async function updateVendorInvoice(id: string, data: Partial<Invoice>): P
   if (fields.paid_by) airtableFields['paid by'] = fields.paid_by;
   if (fields.cancelled_at) airtableFields['cancelled_at'] = fields.cancelled_at;
   if (fields.cancelled_by) airtableFields['cancelled by'] = fields.cancelled_by;
-
-  console.log('🔄 Updating Vendors table record:', id);
-  console.log('📝 Fields to update:', JSON.stringify(airtableFields, null, 2));
 
   const result = await updateRecord<Invoice>(VENDORS_TABLE_ID, id, airtableFields);
 

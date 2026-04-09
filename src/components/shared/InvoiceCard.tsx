@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import Link from 'next/link';
 import { Invoice } from '@/types/invoice';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
@@ -17,7 +17,7 @@ interface InvoiceCardProps {
   showMarkAsPaid?: boolean;
 }
 
-export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProps) {
+function InvoiceCardComponent({ invoice, showMarkAsPaid = false }: InvoiceCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
@@ -115,7 +115,7 @@ export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProp
   };
 
   const handleContactVendor = () => {
-    // TODO: سيتم ربطه بإرسال إيميل لاحقاً
+    // Feature: Email integration not implemented yet
     alert('سيتم تفعيل هذه الميزة قريباً - إرسال إيميل للمزود');
   };
 
@@ -341,3 +341,5 @@ export function InvoiceCard({ invoice, showMarkAsPaid = false }: InvoiceCardProp
     </div>
   );
 }
+
+export const InvoiceCard = memo(InvoiceCardComponent);

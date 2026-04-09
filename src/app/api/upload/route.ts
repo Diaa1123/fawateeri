@@ -56,7 +56,6 @@ export async function POST(request: Request) {
       data: result,
     });
   } catch (error) {
-    console.error('Upload error:', error);
     return NextResponse.json<ApiResponse<null>>(
       {
         success: false,

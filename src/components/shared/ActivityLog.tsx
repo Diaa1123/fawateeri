@@ -119,7 +119,7 @@ export function ActivityLog() {
         }
       }
 
-      // TODO: Reverted event - requires tracking when invoice status changes from paid/cancelled back to new
+      // Note: Reverted event tracking not implemented - would require status history
       // This would need additional fields in Airtable (reverted_at, reverted_by)
     });
 

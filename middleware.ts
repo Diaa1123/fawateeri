@@ -17,12 +17,17 @@ export async function middleware(request: NextRequest) {
   }
 
   // Check if the path requires authentication
-  const requiresAuth =
+  // Note: Route groups like (dashboard) and (admin) don't appear in URLs
+  // Actual routes: /, /invoices, /archive, /add, /users
+  const isProtectedRoute =
     pathname.startsWith('/api/') ||
-    pathname.startsWith('/(dashboard)') ||
-    pathname.startsWith('/(admin)');
+    pathname === '/' ||
+    pathname.startsWith('/invoices') ||
+    pathname.startsWith('/archive') ||
+    pathname.startsWith('/add') ||
+    pathname.startsWith('/users');
 
-  if (!requiresAuth) {
+  if (!isProtectedRoute) {
     return NextResponse.next();
   }
 

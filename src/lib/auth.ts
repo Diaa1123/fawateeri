@@ -66,12 +66,19 @@ export async function verifyToken(token: string): Promise<UserPayload | null> {
 }
 
 /**
+ * Sanitize string for Airtable formula to prevent injection
+ */
+function sanitizeForAirtableFormula(input: string): string {
+  return input.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+}
+
+/**
  * Get user from Airtable by username
  */
 export async function getUserByUsername(username: string): Promise<User | null> {
   try {
     const result = await listRecords<User>('Users', {
-      filterByFormula: `{username} = '${username}'`,
+      filterByFormula: `{username} = '${sanitizeForAirtableFormula(username)}'`,
       maxRecords: 1,
     });
 

@@ -17,27 +17,33 @@ export function useAuth() {
 
   // Load user from localStorage on mount
   useEffect(() => {
-    const storedToken = localStorage.getItem('auth_token');
-    const storedUser = localStorage.getItem('auth_user');
+    try {
+      const storedToken = localStorage.getItem('auth_token');
+      const storedUser = localStorage.getItem('auth_user');
 
-    if (storedToken && storedUser) {
-      setToken(storedToken);
+      if (storedToken && storedUser) {
+        setToken(storedToken);
 
-      // Parse stored user
-      const parsedUser = JSON.parse(storedUser);
+        // Parse stored user with error handling
+        const parsedUser = JSON.parse(storedUser);
 
-      // Migration: If old format with displayName, convert to display_name
-      if ('displayName' in parsedUser && !('display_name' in parsedUser)) {
-        parsedUser.display_name = parsedUser.displayName;
-        delete parsedUser.displayName;
-        // Update localStorage with new format
-        localStorage.setItem('auth_user', JSON.stringify(parsedUser));
+        // Migration: If old format with displayName, convert to display_name
+        if ('displayName' in parsedUser && !('display_name' in parsedUser)) {
+          parsedUser.display_name = parsedUser.displayName;
+          delete parsedUser.displayName;
+          // Update localStorage with new format
+          localStorage.setItem('auth_user', JSON.stringify(parsedUser));
+        }
+
+        setUser(parsedUser);
       }
-
-      setUser(parsedUser);
+    } catch (error) {
+      // If parsing fails, clear corrupted data
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   }, []);
 
   const login = async (username: string, password: string): Promise<LoginResponse> => {

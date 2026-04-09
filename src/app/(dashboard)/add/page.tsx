@@ -8,14 +8,16 @@ import { CheckCircle, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 interface InvoiceFormData {
-  invoice_number: string;
   vendor_name: string;
   amount: number;
-  currency: string;
   invoice_date: string;
   due_date: string;
-  pdf_url?: string;
+  pdf_file?: File;
+  currency?: string;
+  currency_preference?: string;
+  payment_URL?: string;
   payment_link?: string;
+  email?: string;
   notes?: string;
 }
 

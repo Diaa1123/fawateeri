@@ -36,30 +36,48 @@ export async function middleware(request: NextRequest) {
   const token = authHeader?.replace('Bearer ', '') || request.cookies.get('token')?.value;
 
   if (!token) {
-    return NextResponse.json(
-      { success: false, error: 'غير مصرح. الرجاء تسجيل الدخول' },
-      { status: 401 }
-    );
+    // Redirect to login for page requests, return JSON for API requests
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { success: false, error: 'غير مصرح. الرجاء تسجيل الدخول' },
+        { status: 401 }
+      );
+    }
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
   }
 
   // Verify token
   const payload = await verifyToken(token);
 
   if (!payload) {
-    return NextResponse.json(
-      { success: false, error: 'الجلسة منتهية. الرجاء تسجيل الدخول مرة أخرى' },
-      { status: 401 }
-    );
+    // Redirect to login for page requests, return JSON for API requests
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { success: false, error: 'الجلسة منتهية. الرجاء تسجيل الدخول مرة أخرى' },
+        { status: 401 }
+      );
+    }
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
   }
 
   // Check if the path requires admin role
   const requiresAdmin = adminOnlyPaths.some((path) => pathname.startsWith(path));
 
   if (requiresAdmin && payload.role !== 'admin') {
-    return NextResponse.json(
-      { success: false, error: 'غير مصرح. هذه الصفحة للأدمن فقط' },
-      { status: 403 }
-    );
+    // Return JSON for API requests, redirect to home for page requests
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { success: false, error: 'غير مصرح. هذه الصفحة للأدمن فقط' },
+        { status: 403 }
+      );
+    }
+    const url = request.nextUrl.clone();
+    url.pathname = '/';
+    return NextResponse.redirect(url);
   }
 
   // Team role can only access /add page

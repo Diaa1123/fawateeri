@@ -120,18 +120,16 @@ export async function POST(request: Request) {
     // Extract month_year from invoice_date (YYYY-MM)
     const monthYear = data.invoice_date.substring(0, 7);
 
-    // Convert base64 PDF to Airtable attachment format if provided
+    // Convert PDF to Airtable attachment format if provided
+    // Note: Airtable only accepts HTTP/HTTPS URLs, not base64 data
     let airtableAttachment = undefined;
     if (data.invoice_file) {
       if (data.invoice_file.base64 && data.invoice_file.filename) {
-        // Base64 data from frontend - convert to Airtable attachment format
-        // Airtable expects: [{ url: "data:..." }] for base64
-        airtableAttachment = [{
-          url: data.invoice_file.base64,
-          filename: data.invoice_file.filename
-        }];
+        // Base64 data - Skip for now (needs Google Drive upload in Phase 2)
+        // TODO: Upload to Google Drive first, then use the URL
+        airtableAttachment = undefined;
       } else if (data.invoice_file.url) {
-        // Regular URL
+        // Regular HTTP/HTTPS URL
         airtableAttachment = [{ url: data.invoice_file.url }];
       } else if (Array.isArray(data.invoice_file)) {
         // Already in Airtable format

@@ -53,13 +53,14 @@ export function useAuth() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Important: Include cookies in request
         body: JSON.stringify({ username, password }),
       });
 
       const data: LoginResponse = await response.json();
 
       if (data.success && data.token && data.user) {
-        // Save to localStorage
+        // Save to localStorage (for backward compatibility)
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('auth_user', JSON.stringify(data.user));
 
@@ -84,6 +85,7 @@ export function useAuth() {
       // Call logout API to clear cookie
       await fetch('/api/auth/logout', {
         method: 'POST',
+        credentials: 'include', // Important: Include cookies in request
       });
     } catch (error) {
       // Continue with logout even if API call fails

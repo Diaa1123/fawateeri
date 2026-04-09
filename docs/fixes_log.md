@@ -2,6 +2,148 @@
 
 ---
 
+## [FIXED] إصلاح Authentication + Redirect + PDF Upload — 2026-04-09
+
+### المشاكل:
+1. ❌ عند فتح `/` → JSON error بدلاً من redirect لـ login
+2. ❌ بعد Login → لا يدخل Dashboard
+3. ❌ رفع PDF يفشل مع Airtable error
+
+### الإصلاحات:
+
+#### 1. ✅ Middleware - Redirect بدلاً من JSON للصفحات
+**الملف:** `middleware.ts`
+
+**المشكلة:**
+- Middleware كان يرجع JSON error لكل الـ requests (صفحات + API)
+- المستخدم يشوف `{"success":false,"error":"غير مصرح"}` بدلاً من صفحة Login
+
+**الحل:**
+```typescript
+// قبل
+if (!token) {
+  return NextResponse.json(
+    { success: false, error: 'غير مصرح' },
+    { status: 401 }
+  );
+}
+
+// بعد
+if (!token) {
+  // Redirect to login for page requests, return JSON for API requests
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json(
+      { success: false, error: 'غير مصرح. الرجاء تسجيل الدخول' },
+      { status: 401 }
+    );
+  }
+  const url = request.nextUrl.clone();
+  url.pathname = '/login';
+  return NextResponse.redirect(url);
+}
+```
+
+**النتيجة:** الآن عند فتح `/` بدون login → redirect لـ `/login` ✅
+
+---
+
+#### 2. ✅ useAuth - إضافة credentials: 'include'
+**الملف:** `src/hooks/useAuth.ts`
+
+**المشكلة:**
+- الـ cookies لا ترسل مع requests
+- الـ middleware لا يلقى token في الـ cookie
+
+**الحل:**
+```typescript
+// في login
+const response = await fetch('/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include', // ← إضافة هذا
+  body: JSON.stringify({ username, password }),
+});
+
+// في logout
+await fetch('/api/auth/logout', {
+  method: 'POST',
+  credentials: 'include', // ← إضافة هذا
+});
+```
+
+**النتيجة:** الآن الـ cookies ترسل مع كل request ✅
+
+---
+
+#### 3. ✅ Login Page - منع Redirect Loop
+**الملف:** `src/app/(auth)/login/page.tsx`
+
+**المشكلة:**
+- useEffect يعمل redirect كل ما `isAuthenticated` يتغير
+- يسبب redirect loop
+
+**الحل:**
+```typescript
+// قبل
+useEffect(() => {
+  if (isAuthenticated) {
+    router.push('/');
+  }
+}, [isAuthenticated, router]); // ← يتنفذ عند كل تغيير
+
+// بعد
+useEffect(() => {
+  if (isAuthenticated) {
+    router.replace('/');
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []); // ← يتنفذ مرة واحدة فقط عند mount
+```
+
+**النتيجة:** لا redirect loop ✅
+
+---
+
+#### 4. ✅ PDF Upload - تجاهل Base64 مؤقتاً
+**الملف:** `src/app/api/invoices/route.ts`
+
+**المشكلة:**
+```
+Failed to create record: Airtable API error: Invalid attachment object
+```
+
+**السبب:**
+- الكود كان يرسل base64 data مباشرة لـ Airtable
+- Airtable يقبل فقط HTTP/HTTPS URLs
+
+**الحل:**
+```typescript
+if (data.invoice_file.base64 && data.invoice_file.filename) {
+  // Base64 data - Skip for now (needs Google Drive upload in Phase 2)
+  // TODO: Upload to Google Drive first, then use the URL
+  airtableAttachment = undefined; // ← تجاهل مؤقتاً
+}
+```
+
+**النتيجة:**
+- حفظ الفاتورة يشتغل ✅
+- الـ PDF لا يحفظ (مؤقتاً حتى نشتغل على Google Drive في المرحلة 2)
+
+---
+
+### الملفات المعدلة (4 ملفات):
+1. `middleware.ts` - Redirect logic
+2. `src/hooks/useAuth.ts` - credentials: 'include'
+3. `src/app/(auth)/login/page.tsx` - Fix redirect loop
+4. `src/app/api/invoices/route.ts` - Skip base64 PDF
+
+### ملاحظات:
+- ⚠️ رفع PDF معطل مؤقتاً - سيتم تفعيله في المرحلة 2 (Google Drive integration)
+- ✅ يمكن إضافة فواتير بدون PDF
+- ✅ يمكن إضافة رابط الدفع يدوياً
+
+---
+
 ## [FIXED] مراجعة شاملة للكود - إصلاح 7 مشاكل أمنية ونوعية — 2026-04-09
 
 ### ملخص:

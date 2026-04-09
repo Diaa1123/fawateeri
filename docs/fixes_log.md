@@ -2,6 +2,96 @@
 
 ---
 
+## [FIXED] PATCH Method 405 على Vercel — 2026-04-09
+
+### المشكلة:
+```
+PATCH /api/invoices/[id]
+Status: 405 Method Not Allowed
+Cache: 405 Method Not Allowed
+```
+
+**السبب:**
+- في **localhost** → PATCH يشتغل ✅
+- في **Vercel** → PATCH يرجع 405 ❌
+
+المشكلة كانت في `vercel.json`:
+```json
+"rewrites": [
+  {
+    "source": "/(.*)",
+    "destination": "/"
+  }
+]
+```
+
+هذا كان **يعيد توجيه كل الـ requests** (بما فيها `/api/*`) لـ `/`!
+
+---
+
+### الحل:
+
+#### 1. ✅ حذف rewrites من vercel.json
+**الملف:** `vercel.json`
+
+**قبل:**
+```json
+{
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ]
+}
+```
+
+**بعد:**
+```json
+{
+  "buildCommand": "next build",
+  "devCommand": "next dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["iad1"]
+}
+```
+
+**النتيجة:** API routes الآن تشتغل بشكل طبيعي ✅
+
+---
+
+#### 2. ✅ إضافة OPTIONS handler
+**الملف:** `src/app/api/invoices/[id]/route.ts`
+
+إضافة explicit CORS headers:
+```typescript
+export const OPTIONS = async () => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+};
+```
+
+---
+
+### الملفات المعدلة (2 ملفات):
+1. `vercel.json` - حذف rewrites
+2. `src/app/api/invoices/[id]/route.ts` - إضافة OPTIONS handler
+
+### النتيجة:
+✅ PATCH method يشتغل على Vercel
+✅ تحديث حالة الفاتورة (مدفوعة/ملغاة) يشتغل
+✅ إرجاع فاتورة من الأرشيف لجديدة يشتغل
+
+---
+
 ## [FIXED] إصلاح Authentication + Redirect + PDF Upload — 2026-04-09
 
 ### المشاكل:

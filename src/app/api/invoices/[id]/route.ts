@@ -124,3 +124,14 @@ export async function PATCH(
     );
   }
 }
+
+// Explicitly export supported methods for Vercel
+export const OPTIONS = async () => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+};

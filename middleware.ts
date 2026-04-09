@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 
 // Public paths that don't require authentication
-const publicPaths = ['/api/auth/login', '/api/webhook/make', '/login'];
+const publicPaths = ['/api/auth/login', '/api/auth/logout', '/api/webhook/make', '/login'];
 
 // Admin-only paths
 const adminOnlyPaths = ['/api/users', '/users'];

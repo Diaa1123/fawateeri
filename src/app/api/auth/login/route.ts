@@ -52,8 +52,8 @@ export async function POST(request: Request) {
       role: user.role,
     });
 
-    // 8. Return success response
-    return NextResponse.json({
+    // 8. Return success response with token in cookie
+    const response = NextResponse.json({
       success: true,
       token,
       user: {
@@ -63,6 +63,17 @@ export async function POST(request: Request) {
         role: user.role,
       },
     });
+
+    // Set token in httpOnly cookie for security
+    response.cookies.set('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/',
+    });
+
+    return response;
   } catch (error) {
     return NextResponse.json<ApiResponse<null>>(
       {

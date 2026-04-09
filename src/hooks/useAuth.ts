@@ -79,11 +79,21 @@ export function useAuth() {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    setToken(null);
-    setUser(null);
+  const logout = async () => {
+    try {
+      // Call logout API to clear cookie
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+      });
+    } catch (error) {
+      // Continue with logout even if API call fails
+    } finally {
+      // Clear localStorage
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      setToken(null);
+      setUser(null);
+    }
   };
 
   const isAuthenticated = !!token && !!user;
